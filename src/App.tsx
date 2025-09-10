@@ -6,6 +6,13 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppLayout } from "./components/layout/AppLayout";
 import Overview from "./pages/Overview";
 import QuickInsights from "./pages/QuickInsights";
+import DataConnect from "./pages/DataConnect";
+import InsightAI from "./pages/InsightAI";
+import ForecastPro from "./pages/ForecastPro";
+import SegmentAI from "./pages/SegmentAI";
+import RecommendPro from "./pages/RecommendPro";
+import AlertIQ from "./pages/AlertIQ";
+import DashboardStudio from "./pages/DashboardStudio";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -21,13 +28,13 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/quick-insights" element={<QuickInsights />} />
-            <Route path="/dataconnect" element={<ComingSoon title="DataConnect Pro" />} />
-            <Route path="/insight-ai" element={<ComingSoon title="InsightAI" />} />
-            <Route path="/forecast-pro" element={<ComingSoon title="ForecastPro" />} />
-            <Route path="/segment-ai" element={<ComingSoon title="SegmentAI" />} />
-            <Route path="/recommend-pro" element={<ComingSoon title="RecommendPro" />} />
-            <Route path="/alert-iq" element={<ComingSoon title="AlertIQ" />} />
-            <Route path="/dashboard-studio" element={<ComingSoon title="DashboardStudio" />} />
+            <Route path="/dataconnect" element={<DataConnect />} />
+            <Route path="/insight-ai" element={<InsightAI />} />
+            <Route path="/forecast-pro" element={<ForecastPro />} />
+            <Route path="/segment-ai" element={<SegmentAI />} />
+            <Route path="/recommend-pro" element={<RecommendPro />} />
+            <Route path="/alert-iq" element={<AlertIQ />} />
+            <Route path="/dashboard-studio" element={<DashboardStudio />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
