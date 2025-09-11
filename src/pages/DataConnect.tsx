@@ -1,12 +1,14 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Database, Cloud, FileSpreadsheet, Link2, Trash2, Eye } from "lucide-react";
+import { Upload, Database, Cloud, FileSpreadsheet, Link2, Trash2, Eye, Plus, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Dataset {
   id: string;
@@ -14,73 +16,203 @@ interface Dataset {
   source: string;
   rows: number;
   columns: number;
-  size: string;
-  uploadedAt: string;
-  status: "processing" | "ready" | "error";
+  size_bytes: number;
+  file_path: string | null;
+  created_at: string;
+  status: string;
+  user_id: string;
+  updated_at: string;
+}
+
+interface DataConnector {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  created_at: string;
+  config: any;
+  user_id: string;
+  updated_at: string;
 }
 
 export default function DataConnect() {
-  const [datasets, setDatasets] = useState<Dataset[]>([
-    {
-      id: "1",
-      name: "customer_analytics.csv",
-      source: "Upload",
-      rows: 15420,
-      columns: 12,
-      size: "2.3 MB",
-      uploadedAt: "2024-01-15",
-      status: "ready"
-    },
-    {
-      id: "2", 
-      name: "sales_forecast_data",
-      source: "BigQuery",
-      rows: 45120,
-      columns: 8,
-      size: "12.1 MB",
-      uploadedAt: "2024-01-14",
-      status: "ready"
-    }
-  ]);
-
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [connectors, setConnectors] = useState<DataConnector[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
+  // Load datasets from Supabase
+  useEffect(() => {
+    if (user) {
+      loadDatasets();
+      loadConnectors();
+    }
+  }, [user]);
+
+  const loadDatasets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('datasets')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDatasets(data || []);
+    } catch (error) {
+      console.error('Error loading datasets:', error);
       toast({
-        title: "Upload Started",
-        description: `Uploading ${file.name}...`,
+        title: "Error",
+        description: "Failed to load datasets",
+        variant: "destructive"
       });
-      // Simulate upload
-      setTimeout(() => {
-        const newDataset: Dataset = {
-          id: Date.now().toString(),
-          name: file.name,
-          source: "Upload",
-          rows: Math.floor(Math.random() * 50000) + 1000,
-          columns: Math.floor(Math.random() * 20) + 5,
-          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          uploadedAt: new Date().toISOString().split('T')[0],
-          status: "ready"
-        };
-        setDatasets(prev => [newDataset, ...prev]);
-        toast({
-          title: "Upload Complete",
-          description: `${file.name} has been processed and is ready for analysis.`,
-        });
-      }, 2000);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getStatusBadge = (status: Dataset['status']) => {
-    const variants = {
+  const loadConnectors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('data_connectors')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setConnectors(data || []);
+    } catch (error) {
+      console.error('Error loading connectors:', error);
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+    toast({
+      title: "Upload Started",
+      description: `Uploading ${file.name}...`,
+    });
+
+    try {
+      // Upload file to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('datasets')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Create dataset record
+      const { data: dataset, error: dbError } = await supabase
+        .from('datasets')
+        .insert({
+          user_id: user.id,
+          name: file.name,
+          source: "Upload",
+          file_path: uploadData.path,
+          size_bytes: file.size,
+          rows: Math.floor(Math.random() * 50000) + 1000, // In real app, parse file
+          columns: Math.floor(Math.random() * 20) + 5, // In real app, parse file
+          status: "ready"
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      setDatasets(prev => [dataset, ...prev]);
+      toast({
+        title: "Upload Complete",
+        description: `${file.name} has been processed and is ready for analysis.`,
+      });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: "Failed to upload file. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive"> = {
       processing: "secondary",
       ready: "default", 
       error: "destructive"
-    } as const;
+    };
     
-    return <Badge variant={variants[status]}>{status}</Badge>;
+    return <Badge variant={variants[status] || "default"}>{status}</Badge>;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const deleteDataset = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('datasets')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setDatasets(prev => prev.filter(d => d.id !== id));
+      toast({
+        title: "Dataset Deleted",
+        description: "Dataset has been successfully deleted.",
+      });
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete dataset. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleConnectorSubmit = async (type: string) => {
+    if (!user) return;
+
+    try {
+      const response = await supabase.functions.invoke('data-connectors', {
+        body: {
+          action: 'create',
+          connectorType: type,
+          config: {}, // In real app, collect form data
+          name: `${type.toUpperCase()} Connection`
+        }
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "Connector Created",
+        description: `${type.toUpperCase()} connector has been set up successfully.`,
+      });
+
+      loadConnectors();
+    } catch (error) {
+      console.error('Connector creation error:', error);
+      toast({
+        title: "Connection Failed",
+        description: "Failed to create connector. Please check your credentials.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -98,8 +230,20 @@ export default function DataConnect() {
         </TabsList>
 
         <TabsContent value="datasets" className="space-y-4">
-          <div className="grid gap-4">
-            {datasets.map((dataset) => (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="ml-2">Loading datasets...</span>
+            </div>
+          ) : datasets.length === 0 ? (
+            <div className="text-center py-8">
+              <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="font-semibold mb-2">No datasets yet</h3>
+              <p className="text-muted-foreground">Upload your first dataset to get started</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {datasets.map((dataset) => (
               <Card key={dataset.id}>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
@@ -114,7 +258,7 @@ export default function DataConnect() {
                           {dataset.rows.toLocaleString()} rows
                         </span>
                         <span>{dataset.columns} columns</span>
-                        <span>{dataset.size}</span>
+                        <span>{formatFileSize(dataset.size_bytes)}</span>
                         <span>Source: {dataset.source}</span>
                       </div>
                     </div>
@@ -123,15 +267,20 @@ export default function DataConnect() {
                         <Eye className="h-4 w-4 mr-1" />
                         Preview
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => deleteDataset(dataset.id)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="upload" className="space-y-4">
@@ -156,7 +305,14 @@ export default function DataConnect() {
                   className="mt-4 cursor-pointer"
                   accept=".csv,.json,.parquet"
                   onChange={handleFileUpload}
+                  disabled={uploading}
                 />
+                {uploading && (
+                  <div className="flex items-center justify-center mt-4">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-sm">Uploading...</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -181,7 +337,10 @@ export default function DataConnect() {
                   <Label>Access Key ID</Label>
                   <Input type="password" placeholder="Enter access key" />
                 </div>
-                <Button className="w-full">
+                <Button 
+                  className="w-full"
+                  onClick={() => handleConnectorSubmit('s3')}
+                >
                   <Link2 className="h-4 w-4 mr-2" />
                   Connect S3
                 </Button>
@@ -205,7 +364,10 @@ export default function DataConnect() {
                   <Label>Sheet Name</Label>
                   <Input placeholder="Sheet1" />
                 </div>
-                <Button className="w-full">
+                <Button 
+                  className="w-full"
+                  onClick={() => handleConnectorSubmit('google_sheets')}
+                >
                   <Link2 className="h-4 w-4 mr-2" />
                   Connect Sheets
                 </Button>
@@ -229,7 +391,10 @@ export default function DataConnect() {
                   <Label>Service Account JSON</Label>
                   <Input type="file" accept=".json" />
                 </div>
-                <Button className="w-full">
+                <Button 
+                  className="w-full"
+                  onClick={() => handleConnectorSubmit('bigquery')}
+                >
                   <Link2 className="h-4 w-4 mr-2" />
                   Connect BigQuery
                 </Button>

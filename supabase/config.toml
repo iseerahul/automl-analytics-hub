@@ -1,1 +1,7 @@
 project_id = "maejmpkaanukcnyeklin"
+
+[functions.process-dataset]
+verify_jwt = false
+
+[functions.data-connectors]
+verify_jwt = true

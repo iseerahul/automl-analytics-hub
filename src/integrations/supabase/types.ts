@@ -14,6 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      data_connectors: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          name: string
+          status: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          id?: string
+          name: string
+          status?: string
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          status?: string
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      datasets: {
+        Row: {
+          columns: number | null
+          created_at: string
+          file_path: string | null
+          id: string
+          name: string
+          rows: number | null
+          size_bytes: number | null
+          source: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          columns?: number | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          name: string
+          rows?: number | null
+          size_bytes?: number | null
+          source: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          columns?: number | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          name?: string
+          rows?: number | null
+          size_bytes?: number | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
