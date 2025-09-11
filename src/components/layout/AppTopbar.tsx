@@ -1,6 +1,7 @@
-import { Bell, Search, User } from "lucide-react";
+import { Bell, Search, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/useAuth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 export function AppTopbar() {
+  const { signOut, user } = useAuth();
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-6">
       {/* Search */}
@@ -91,9 +93,9 @@ export function AppTopbar() {
           <DropdownMenuContent className="w-56" align="end">
             <div className="flex items-center justify-start gap-2 p-2">
               <div className="flex flex-col space-y-1 leading-none">
-                <p className="font-medium">Sarah Chen</p>
+                <p className="font-medium">{user?.user_metadata?.display_name || 'User'}</p>
                 <p className="w-[200px] truncate text-sm text-muted-foreground">
-                  sarah.chen@startupai.com
+                  {user?.email}
                 </p>
               </div>
             </div>
@@ -102,7 +104,10 @@ export function AppTopbar() {
             <DropdownMenuItem>API Keys</DropdownMenuItem>
             <DropdownMenuItem>Billing</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Log out</DropdownMenuItem>
+            <DropdownMenuItem onClick={signOut} className="text-destructive">
+              <LogOut className="mr-2 h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

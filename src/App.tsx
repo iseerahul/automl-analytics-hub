@@ -3,7 +3,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./hooks/useAuth";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
+import LandingPage from "./pages/LandingPage";
 import Overview from "./pages/Overview";
 import QuickInsights from "./pages/QuickInsights";
 import DataConnect from "./pages/DataConnect";
@@ -20,27 +23,37 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AppLayout>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/quick-insights" element={<QuickInsights />} />
-            <Route path="/dataconnect" element={<DataConnect />} />
-            <Route path="/insight-ai" element={<InsightAI />} />
-            <Route path="/forecast-pro" element={<ForecastPro />} />
-            <Route path="/segment-ai" element={<SegmentAI />} />
-            <Route path="/recommend-pro" element={<RecommendPro />} />
-            <Route path="/alert-iq" element={<AlertIQ />} />
-            <Route path="/dashboard-studio" element={<DashboardStudio />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
+            <Route path="/auth" element={<LandingPage />} />
+            <Route path="/*" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Routes>
+                    <Route path="/" element={<Overview />} />
+                    <Route path="/dashboard" element={<Overview />} />
+                    <Route path="/quick-insights" element={<QuickInsights />} />
+                    <Route path="/dataconnect" element={<DataConnect />} />
+                    <Route path="/insight-ai" element={<InsightAI />} />
+                    <Route path="/forecast-pro" element={<ForecastPro />} />
+                    <Route path="/segment-ai" element={<SegmentAI />} />
+                    <Route path="/recommend-pro" element={<RecommendPro />} />
+                    <Route path="/alert-iq" element={<AlertIQ />} />
+                    <Route path="/dashboard-studio" element={<DashboardStudio />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </AppLayout>
+              </ProtectedRoute>
+            } />
           </Routes>
-        </AppLayout>
-      </BrowserRouter>
-    </TooltipProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
