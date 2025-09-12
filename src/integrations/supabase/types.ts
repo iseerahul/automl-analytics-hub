@@ -89,6 +89,111 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_jobs: {
+        Row: {
+          accuracy: number | null
+          completed_at: string | null
+          config: Json
+          created_at: string
+          dataset_id: string
+          error_message: string | null
+          id: string
+          metrics: Json | null
+          name: string
+          problem_type: string
+          progress: number
+          selected_features: string[]
+          started_at: string | null
+          status: string
+          target_column: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          accuracy?: number | null
+          completed_at?: string | null
+          config?: Json
+          created_at?: string
+          dataset_id: string
+          error_message?: string | null
+          id?: string
+          metrics?: Json | null
+          name: string
+          problem_type: string
+          progress?: number
+          selected_features?: string[]
+          started_at?: string | null
+          status?: string
+          target_column: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          accuracy?: number | null
+          completed_at?: string | null
+          config?: Json
+          created_at?: string
+          dataset_id?: string
+          error_message?: string | null
+          id?: string
+          metrics?: Json | null
+          name?: string
+          problem_type?: string
+          progress?: number
+          selected_features?: string[]
+          started_at?: string | null
+          status?: string
+          target_column?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_models: {
+        Row: {
+          created_at: string
+          feature_importance: Json | null
+          id: string
+          job_id: string
+          metrics: Json
+          model_config: Json
+          model_type: string
+          name: string
+          status: string
+          training_history: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          feature_importance?: Json | null
+          id?: string
+          job_id: string
+          metrics?: Json
+          model_config?: Json
+          model_type: string
+          name: string
+          status?: string
+          training_history?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          feature_importance?: Json | null
+          id?: string
+          job_id?: string
+          metrics?: Json
+          model_config?: Json
+          model_type?: string
+          name?: string
+          status?: string
+          training_history?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

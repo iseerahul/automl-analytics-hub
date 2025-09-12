@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,58 +8,189 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface Dataset {
+  id: string;
+  name: string;
+  source: string;
+  rows: number;
+  columns: number;
+  status: string;
+}
 
 interface MLJob {
   id: string;
   name: string;
-  type: "classification" | "regression";
-  dataset: string;
-  status: "running" | "completed" | "failed" | "queued";
+  problem_type: "classification" | "regression";
+  dataset_id: string;
+  target_column: string;
+  selected_features: string[];
+  status: "queued" | "running" | "completed" | "failed";
   progress: number;
   accuracy?: number;
-  startTime: string;
+  started_at: string;
+  datasets?: { name: string; source: string };
 }
 
-const mockJobs: MLJob[] = [
-  {
-    id: "1",
-    name: "Customer Churn Prediction",
-    type: "classification", 
-    dataset: "customer_data.csv",
-    status: "completed",
-    progress: 100,
-    accuracy: 0.94,
-    startTime: "2024-01-15 10:30"
-  },
-  {
-    id: "2",
-    name: "Sales Forecasting Model",
-    type: "regression",
-    dataset: "sales_history.csv", 
-    status: "running",
-    progress: 65,
-    startTime: "2024-01-15 14:20"
-  }
-];
+interface MLModel {
+  id: string;
+  name: string;
+  model_type: string;
+  metrics: any;
+  training_history: any[];
+  status: string;
+  created_at: string;
+}
 
-const trainingMetrics = [
-  { epoch: 1, accuracy: 0.72, loss: 0.65 },
-  { epoch: 2, accuracy: 0.78, loss: 0.58 },
-  { epoch: 3, accuracy: 0.82, loss: 0.52 },
-  { epoch: 4, accuracy: 0.85, loss: 0.48 },
-  { epoch: 5, accuracy: 0.87, loss: 0.45 },
-  { epoch: 6, accuracy: 0.89, loss: 0.42 },
-  { epoch: 7, accuracy: 0.91, loss: 0.39 },
-  { epoch: 8, accuracy: 0.92, loss: 0.37 },
-  { epoch: 9, accuracy: 0.93, loss: 0.35 },
-  { epoch: 10, accuracy: 0.94, loss: 0.33 }
-];
+interface WizardState {
+  selectedDataset: string;
+  problemType: 'classification' | 'regression';
+  targetColumn: string;
+  selectedFeatures: string[];
+  timeBudget: number;
+  optimizationMetric: string;
+  modelName: string;
+}
 
 export default function InsightAI() {
   const [currentStep, setCurrentStep] = useState(1);
-  const [jobs, setJobs] = useState<MLJob[]>(mockJobs);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [jobs, setJobs] = useState<MLJob[]>([]);
+  const [models, setModels] = useState<MLModel[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [wizardState, setWizardState] = useState<WizardState>({
+    selectedDataset: '',
+    problemType: 'classification',
+    targetColumn: '',
+    selectedFeatures: [],
+    timeBudget: 15,
+    optimizationMetric: 'accuracy',
+    modelName: ''
+  });
+  const { toast } = useToast();
+
+  // Sample features for demo (in real implementation, these would come from dataset analysis)
+  const availableFeatures = [
+    'customer_age', 'total_purchases', 'avg_order_value', 
+    'days_since_last_purchase', 'support_tickets', 'account_balance',
+    'login_frequency', 'session_duration'
+  ];
+
+  useEffect(() => {
+    loadDatasets();
+    loadJobs();
+    loadModels();
+    
+    // Set up polling for job status updates
+    const interval = setInterval(() => {
+      loadJobs();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDatasets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('datasets')
+        .select('*')
+        .eq('status', 'ready')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDatasets(data || []);
+    } catch (error) {
+      console.error('Error loading datasets:', error);
+    }
+  };
+
+  const loadJobs = async () => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'get-jobs' }
+      });
+
+      if (response.error) throw response.error;
+      setJobs(response.data?.jobs || []);
+    } catch (error) {
+      console.error('Error loading jobs:', error);
+    }
+  };
+
+  const loadModels = async () => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'get-models' }
+      });
+
+      if (response.error) throw response.error;
+      setModels(response.data?.models || []);
+    } catch (error) {
+      console.error('Error loading models:', error);
+    }
+  };
+
+  const startTraining = async () => {
+    if (!wizardState.selectedDataset || !wizardState.targetColumn || !wizardState.modelName) {
+      toast({
+        title: "Missing Information",
+        description: "Please complete all required fields before starting training.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: {
+          action: 'start-training',
+          name: wizardState.modelName,
+          datasetId: wizardState.selectedDataset,
+          problemType: wizardState.problemType,
+          targetColumn: wizardState.targetColumn,
+          selectedFeatures: wizardState.selectedFeatures.length > 0 ? wizardState.selectedFeatures : availableFeatures,
+          timeBudget: wizardState.timeBudget,
+          optimizationMetric: wizardState.optimizationMetric
+        }
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "Training Started",
+        description: "Your ML model training has been initiated successfully.",
+      });
+
+      // Reset wizard and switch to jobs tab
+      setCurrentStep(1);
+      setWizardState({
+        selectedDataset: '',
+        problemType: 'classification',
+        targetColumn: '',
+        selectedFeatures: [],
+        timeBudget: 15,
+        optimizationMetric: 'accuracy',
+        modelName: ''
+      });
+
+      loadJobs();
+    } catch (error) {
+      console.error('Training start error:', error);
+      toast({
+        title: "Training Failed",
+        description: "Failed to start model training. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusIcon = (status: MLJob['status']) => {
     switch (status) {
@@ -80,6 +211,9 @@ export default function InsightAI() {
     
     return <Badge variant={variants[status]}>{status}</Badge>;
   };
+
+  const selectedDataset = datasets.find(d => d.id === wizardState.selectedDataset);
+  const currentModel = models.length > 0 ? models[0] : null;
 
   return (
     <div className="space-y-6">
@@ -137,19 +271,31 @@ export default function InsightAI() {
               {currentStep === 1 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Select Your Dataset</h3>
-                  <Select>
+                  <Select 
+                    value={wizardState.selectedDataset} 
+                    onValueChange={(value) => setWizardState({...wizardState, selectedDataset: value})}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a dataset" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="customer_data">customer_analytics.csv</SelectItem>
-                      <SelectItem value="sales_data">sales_forecast_data</SelectItem>
-                      <SelectItem value="product_data">product_metrics.json</SelectItem>
+                      {datasets.map((dataset) => (
+                        <SelectItem key={dataset.id} value={dataset.id}>
+                          {dataset.name} ({dataset.source})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <div className="text-sm text-muted-foreground">
-                    15,420 rows × 12 columns • Last updated: 2 hours ago
-                  </div>
+                  {selectedDataset && (
+                    <div className="text-sm text-muted-foreground">
+                      {selectedDataset.rows?.toLocaleString()} rows × {selectedDataset.columns} columns • Source: {selectedDataset.source}
+                    </div>
+                  )}
+                  {datasets.length === 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      No datasets available. Please upload a dataset in DataConnect Pro first.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -159,7 +305,12 @@ export default function InsightAI() {
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Problem Type</Label>
-                      <Select>
+                      <Select 
+                        value={wizardState.problemType} 
+                        onValueChange={(value: 'classification' | 'regression') => 
+                          setWizardState({...wizardState, problemType: value})
+                        }
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select problem type" />
                         </SelectTrigger>
@@ -171,7 +322,10 @@ export default function InsightAI() {
                     </div>
                     <div className="space-y-2">
                       <Label>Target Column</Label>
-                      <Select>
+                      <Select 
+                        value={wizardState.targetColumn} 
+                        onValueChange={(value) => setWizardState({...wizardState, targetColumn: value})}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select target variable" />
                         </SelectTrigger>
@@ -179,6 +333,8 @@ export default function InsightAI() {
                           <SelectItem value="churn">customer_churn</SelectItem>
                           <SelectItem value="revenue">total_revenue</SelectItem>
                           <SelectItem value="satisfaction">satisfaction_score</SelectItem>
+                          <SelectItem value="sales">sales_amount</SelectItem>
+                          <SelectItem value="conversion">conversion_rate</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -190,14 +346,36 @@ export default function InsightAI() {
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Feature Engineering</h3>
                   <div className="space-y-2">
-                    <Label>Select Features</Label>
+                    <Label>Select Features (leave empty to auto-select all features)</Label>
                     <div className="border rounded-md p-4 space-y-2 max-h-40 overflow-y-auto">
-                      {["customer_age", "total_purchases", "avg_order_value", "days_since_last_purchase", "support_tickets"].map((feature) => (
-                        <label key={feature} className="flex items-center space-x-2">
-                          <input type="checkbox" defaultChecked className="rounded" />
-                          <span className="text-sm">{feature}</span>
-                        </label>
+                      {availableFeatures.map((feature) => (
+                        <div key={feature} className="flex items-center space-x-2">
+                          <Checkbox 
+                            id={feature}
+                            checked={wizardState.selectedFeatures.includes(feature)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setWizardState({
+                                  ...wizardState, 
+                                  selectedFeatures: [...wizardState.selectedFeatures, feature]
+                                });
+                              } else {
+                                setWizardState({
+                                  ...wizardState, 
+                                  selectedFeatures: wizardState.selectedFeatures.filter(f => f !== feature)
+                                });
+                              }
+                            }}
+                          />
+                          <Label htmlFor={feature} className="text-sm font-normal">{feature}</Label>
+                        </div>
                       ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {wizardState.selectedFeatures.length > 0 
+                        ? `${wizardState.selectedFeatures.length} features selected`
+                        : 'All features will be used for training'
+                      }
                     </div>
                   </div>
                 </div>
@@ -209,7 +387,10 @@ export default function InsightAI() {
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Training Time Budget</Label>
-                      <Select>
+                      <Select 
+                        value={wizardState.timeBudget.toString()} 
+                        onValueChange={(value) => setWizardState({...wizardState, timeBudget: parseInt(value)})}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select time limit" />
                         </SelectTrigger>
@@ -223,7 +404,10 @@ export default function InsightAI() {
                     </div>
                     <div className="space-y-2">
                       <Label>Optimization Metric</Label>
-                      <Select>
+                      <Select 
+                        value={wizardState.optimizationMetric} 
+                        onValueChange={(value) => setWizardState({...wizardState, optimizationMetric: value})}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select metric" />
                         </SelectTrigger>
@@ -245,28 +429,41 @@ export default function InsightAI() {
                   <div className="bg-muted p-4 rounded-md space-y-2">
                     <div className="flex justify-between">
                       <span className="font-medium">Dataset:</span>
-                      <span>customer_analytics.csv</span>
+                      <span>{selectedDataset?.name || 'Not selected'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Problem Type:</span>
-                      <span>Classification</span>
+                      <span className="capitalize">{wizardState.problemType}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Target:</span>
-                      <span>customer_churn</span>
+                      <span>{wizardState.targetColumn || 'Not selected'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Features:</span>
-                      <span>5 selected</span>
+                      <span>
+                        {wizardState.selectedFeatures.length > 0 
+                          ? `${wizardState.selectedFeatures.length} selected` 
+                          : 'All features'
+                        }
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Time Budget:</span>
-                      <span>15 minutes</span>
+                      <span>{wizardState.timeBudget} minutes</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Optimization:</span>
+                      <span className="capitalize">{wizardState.optimizationMetric}</span>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Model Name</Label>
-                    <Input placeholder="e.g., Customer Churn Model v1" />
+                    <Input 
+                      placeholder="e.g., Customer Churn Model v1" 
+                      value={wizardState.modelName}
+                      onChange={(e) => setWizardState({...wizardState, modelName: e.target.value})}
+                    />
                   </div>
                 </div>
               )}
@@ -284,9 +481,17 @@ export default function InsightAI() {
                     Next
                   </Button>
                 ) : (
-                  <Button className="bg-gradient-to-r from-purple-600 to-blue-600">
-                    <Play className="h-4 w-4 mr-2" />
-                    Start Training
+                  <Button 
+                    className="bg-gradient-to-r from-purple-600 to-blue-600"
+                    onClick={startTraining}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4 mr-2" />
+                    )}
+                    {loading ? 'Starting...' : 'Start Training'}
                   </Button>
                 )}
               </div>
@@ -307,7 +512,7 @@ export default function InsightAI() {
                         {getStatusBadge(job.status)}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {job.type} • {job.dataset} • Started: {job.startTime}
+                        {job.problem_type} • {job.datasets?.name || 'Unknown dataset'} • Started: {new Date(job.started_at).toLocaleString()}
                       </div>
                     </div>
                     <div className="text-right space-y-1">
@@ -336,38 +541,83 @@ export default function InsightAI() {
         </TabsContent>
 
         <TabsContent value="models" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Training Metrics</CardTitle>
-              <CardDescription>Real-time training performance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trainingMetrics}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="epoch" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line 
-                      type="monotone" 
-                      dataKey="accuracy" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      name="Accuracy"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="loss" 
-                      stroke="hsl(var(--destructive))" 
-                      strokeWidth={2}
-                      name="Loss"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+          {models.length > 0 ? (
+            <div className="grid gap-4">
+              {models.map((model) => (
+                <Card key={model.id}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{model.name}</CardTitle>
+                        <CardDescription>
+                          {model.model_type} • Created: {new Date(model.created_at).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                      <Badge variant={model.status === 'ready' ? 'default' : 'secondary'}>
+                        {model.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {model.metrics && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        {Object.entries(model.metrics).map(([key, value]) => (
+                          <div key={key} className="text-center">
+                            <div className="text-2xl font-bold text-primary">
+                              {typeof value === 'number' ? (value * 100).toFixed(1) + '%' : String(value)}
+                            </div>
+                            <div className="text-sm text-muted-foreground capitalize">
+                              {key.replace('_', ' ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {model.training_history && model.training_history.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-2">Training History</h4>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={model.training_history}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="epoch" />
+                              <YAxis />
+                              <Tooltip />
+                              <Line 
+                                type="monotone" 
+                                dataKey="accuracy" 
+                                stroke="hsl(var(--primary))" 
+                                strokeWidth={2}
+                                name="Accuracy"
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="loss" 
+                                stroke="hsl(var(--destructive))" 
+                                strokeWidth={2}
+                                name="Loss"
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No trained models yet.</p>
+                  <p className="text-sm">Complete the AutoML wizard to create your first model.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
