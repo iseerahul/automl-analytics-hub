@@ -199,17 +199,29 @@ export default function DataConnect() {
 
       if (response.error) throw response.error;
 
+      const connectorId = response.data?.connector?.id as string | undefined;
+      if (connectorId) {
+        const syncRes = await supabase.functions.invoke('data-connectors', {
+          body: { action: 'sync', connectorId }
+        });
+        if (syncRes.error) throw syncRes.error;
+      }
+
       toast({
-        title: "Connector Created",
-        description: `${type.toUpperCase()} connector has been set up successfully.`,
+        title: "Connector Ready",
+        description: connectorId
+          ? `${type.toUpperCase()} connected and data synced to My Datasets.`
+          : `${type.toUpperCase()} connector has been set up successfully.`,
       });
 
+      // Refresh lists
       loadConnectors();
+      loadDatasets();
     } catch (error) {
-      console.error('Connector creation error:', error);
+      console.error('Connector creation/sync error:', error);
       toast({
         title: "Connection Failed",
-        description: "Failed to create connector. Please check your credentials.",
+        description: "Failed to create or sync connector. Please check your credentials.",
         variant: "destructive"
       });
     }

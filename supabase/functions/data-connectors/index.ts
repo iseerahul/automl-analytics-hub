@@ -29,7 +29,7 @@ serve(async (req) => {
       )
     }
 
-    const { action, connectorType, config, name } = await req.json()
+    const { action, connectorType, config, name, connectorId } = await req.json()
 
     if (action === 'create') {
       // Create a new data connector
@@ -86,7 +86,7 @@ serve(async (req) => {
 
     if (action === 'sync') {
       // Sync data from connector (simplified implementation)
-      const { connectorId } = await req.json()
+      // connectorId is already parsed from the initial request body
       
       // Get connector config
       const { data: connector, error: fetchError } = await supabaseClient
