@@ -8,8 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle, Loader2 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle, Loader2, TrendingUp, Award, Target } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,6 +45,7 @@ interface MLModel {
   training_history: any[];
   status: string;
   created_at: string;
+  model_config?: any;
 }
 
 interface WizardState {
@@ -230,6 +231,7 @@ export default function InsightAI() {
           <TabsTrigger value="wizard">AutoML Wizard</TabsTrigger>
           <TabsTrigger value="jobs">Training Jobs</TabsTrigger>
           <TabsTrigger value="models">Model Registry</TabsTrigger>
+          <TabsTrigger value="results">Training Results</TabsTrigger>
         </TabsList>
 
         <TabsContent value="wizard" className="space-y-6">
@@ -614,6 +616,267 @@ export default function InsightAI() {
                   <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No trained models yet.</p>
                   <p className="text-sm">Complete the AutoML wizard to create your first model.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="results" className="space-y-6">
+          {models.length > 0 ? (
+            models.map((model) => (
+              <div key={model.id} className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Award className="h-5 w-5 text-primary" />
+                      {model.name} - Training Results
+                    </CardTitle>
+                    <CardDescription>
+                      Comprehensive analysis of model performance and training outcomes
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Performance Overview */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <Target className="h-5 w-5" />
+                        Model Performance Overview
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        {model.metrics && Object.entries(model.metrics).map(([key, value]) => (
+                          <div key={key} className="text-center p-4 bg-muted/50 rounded-lg">
+                            <div className="text-3xl font-bold text-primary mb-1">
+                              {typeof value === 'number' && key !== 'models_trained' ? 
+                                (value * 100).toFixed(1) + '%' : 
+                                String(value)
+                              }
+                            </div>
+                            <div className="text-sm text-muted-foreground capitalize">
+                              {key.replace(/_/g, ' ')}
+                            </div>
+                            {typeof value === 'number' && value > 0.8 && key !== 'models_trained' && (
+                              <div className="text-xs text-green-600 mt-1">Excellent</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* Training Progress Chart */}
+                    {model.training_history && model.training_history.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5" />
+                          Training Progress & History
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-6">
+                          {/* Accuracy/Performance Chart */}
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-base">Model Performance Over Time</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={model.training_history}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis 
+                                      dataKey="model" 
+                                      label={{ value: 'Model Number', position: 'insideBottom', offset: -5 }}
+                                    />
+                                    <YAxis 
+                                      label={{ value: 'Performance', angle: -90, position: 'insideLeft' }}
+                                    />
+                                    <Tooltip 
+                                      formatter={(value: any, name: string) => [
+                                        typeof value === 'number' ? (value * 100).toFixed(2) + '%' : value,
+                                        name
+                                      ]}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="accuracy" 
+                                      stroke="hsl(var(--primary))" 
+                                      strokeWidth={3}
+                                      name="Accuracy"
+                                      dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
+                                    />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          {/* Algorithm Performance Comparison */}
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-base">Algorithm Performance</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart 
+                                    data={model.training_history.slice(-5)} // Last 5 models
+                                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="algorithm" />
+                                    <YAxis />
+                                    <Tooltip 
+                                      formatter={(value: any) => [
+                                        typeof value === 'number' ? (value * 100).toFixed(2) + '%' : value,
+                                        'Accuracy'
+                                      ]}
+                                    />
+                                    <Bar 
+                                      dataKey="accuracy" 
+                                      fill="hsl(var(--primary))"
+                                      radius={[4, 4, 0, 0]}
+                                    />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    {/* Training Summary & Insights */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5" />
+                        Training Summary & Insights
+                      </h3>
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">Key Insights</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            {model.metrics?.accuracy && (
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                <span className="text-sm">Model Accuracy</span>
+                                <span className="font-semibold">
+                                  {(model.metrics.accuracy * 100).toFixed(1)}%
+                                  {model.metrics.accuracy > 0.85 && 
+                                    <span className="text-green-600 ml-2">⭐ Excellent</span>
+                                  }
+                                </span>
+                              </div>
+                            )}
+                            {model.metrics?.models_trained && (
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                <span className="text-sm">Models Tested</span>
+                                <span className="font-semibold">{model.metrics.models_trained} algorithms</span>
+                              </div>
+                            )}
+                            {model.training_history && (
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                <span className="text-sm">Best Algorithm</span>
+                                <span className="font-semibold">
+                                  {model.training_history.reduce((best, current) => 
+                                    current.accuracy > best.accuracy ? current : best
+                                  ).algorithm || 'Unknown'}
+                                </span>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">Model Configuration</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            {model.model_config && (
+                              <>
+                                <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                  <span className="text-sm">Framework</span>
+                                  <span className="font-semibold">{model.model_config.framework || 'AutoML'}</span>
+                                </div>
+                                {model.model_config.automl_config?.problemType && (
+                                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                    <span className="text-sm">Problem Type</span>
+                                    <span className="font-semibold capitalize">
+                                      {model.model_config.automl_config.problemType}
+                                    </span>
+                                  </div>
+                                )}
+                                {model.model_config.automl_config?.timeBudget && (
+                                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                                    <span className="text-sm">Training Time</span>
+                                    <span className="font-semibold">
+                                      {model.model_config.automl_config.timeBudget} minutes
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+
+                    {/* Performance Recommendations */}
+                    {model.metrics?.accuracy && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4">Performance Recommendations</h3>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <div className="space-y-3">
+                              {model.metrics.accuracy > 0.9 ? (
+                                <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded">
+                                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                                  <div>
+                                    <div className="font-medium text-green-800">Excellent Performance!</div>
+                                    <div className="text-sm text-green-700">
+                                      Your model shows outstanding accuracy. Consider deploying it to production.
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : model.metrics.accuracy > 0.8 ? (
+                                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                                  <TrendingUp className="h-5 w-5 text-blue-600 mt-0.5" />
+                                  <div>
+                                    <div className="font-medium text-blue-800">Good Performance</div>
+                                    <div className="text-sm text-blue-700">
+                                      Model performs well. Consider feature engineering or data augmentation for improvement.
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                                  <div>
+                                    <div className="font-medium text-yellow-800">Room for Improvement</div>
+                                    <div className="text-sm text-yellow-700">
+                                      Consider adding more data, feature engineering, or trying different algorithms.
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ))
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No Training Results Available</p>
+                  <p className="text-sm">Complete model training to see detailed results and insights here.</p>
                 </div>
               </CardContent>
             </Card>
