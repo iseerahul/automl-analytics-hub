@@ -84,18 +84,36 @@ serve(async (req) => {
     }
 
     if (action === 'get-jobs') {
-      const { data: jobs, error } = await supabaseClient
+      // Fetch jobs first, then enrich with dataset info in a separate query
+      const { data: jobs, error: jobsError } = await supabaseClient
         .from('ml_jobs')
-        .select(`
-          *,
-          datasets!inner(name, source)
-        `)
+        .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (jobsError) throw jobsError;
 
-      return new Response(JSON.stringify({ jobs }), {
+      // Build a map of datasets for the jobs
+      const datasetIds = Array.from(new Set((jobs || []).map((j: any) => j.dataset_id).filter(Boolean)));
+      let datasetsMap: Record<string, { id: string; name: string; source: string }> = {};
+
+      if (datasetIds.length > 0) {
+        const { data: datasets, error: dsError } = await supabaseClient
+          .from('datasets')
+          .select('id, name, source')
+          .in('id', datasetIds);
+        if (dsError) throw dsError;
+        (datasets || []).forEach((d: any) => { datasetsMap[d.id] = d; });
+      }
+
+      const enrichedJobs = (jobs || []).map((j: any) => ({
+        ...j,
+        datasets: datasetsMap[j.dataset_id]
+          ? { name: datasetsMap[j.dataset_id].name, source: datasetsMap[j.dataset_id].source }
+          : null
+      }));
+
+      return new Response(JSON.stringify({ jobs: enrichedJobs }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
