@@ -36,7 +36,7 @@ const coreServices = [
     icon: Database,
   },
   {
-    name: "InsightAI",
+    name: "ML Studio",
     href: "/insight-ai",
     icon: Brain,
   },

@@ -11,7 +11,7 @@ import LandingPage from "./pages/LandingPage";
 import Overview from "./pages/Overview";
 import QuickInsights from "./pages/QuickInsights";
 import DataConnect from "./pages/DataConnect";
-import InsightAI from "./pages/InsightAI";
+import MLStudio from "./pages/MLStudio";
 import ForecastPro from "./pages/ForecastPro";
 import SegmentAI from "./pages/SegmentAI";
 import RecommendPro from "./pages/RecommendPro";
@@ -39,7 +39,7 @@ const App = () => (
                     <Route path="/dashboard" element={<Overview />} />
                     <Route path="/quick-insights" element={<QuickInsights />} />
                     <Route path="/dataconnect" element={<DataConnect />} />
-                    <Route path="/insight-ai" element={<InsightAI />} />
+                    <Route path="/insight-ai" element={<MLStudio />} />
                     <Route path="/forecast-pro" element={<ForecastPro />} />
                     <Route path="/segment-ai" element={<SegmentAI />} />
                     <Route path="/recommend-pro" element={<RecommendPro />} />

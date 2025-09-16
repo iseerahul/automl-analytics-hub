@@ -58,7 +58,7 @@ interface WizardState {
   modelName: string;
 }
 
-export default function InsightAI() {
+export default function MLStudio() {
   const [currentStep, setCurrentStep] = useState(1);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [jobs, setJobs] = useState<MLJob[]>([]);
@@ -221,9 +221,9 @@ export default function InsightAI() {
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <Brain className="h-8 w-8 text-primary" />
-          InsightAI
+          ML Studio
         </h1>
-        <p className="text-muted-foreground">Build machine learning models with automated ML workflows</p>
+        <p className="text-muted-foreground">Build general-purpose machine learning models using AutoML</p>
       </div>
 
       <Tabs defaultValue="wizard" className="space-y-6">
