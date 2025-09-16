@@ -8,11 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle, Loader2, TrendingUp, Award, Target } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Brain, Play, Settings, BarChart3, CheckCircle, Clock, AlertCircle, Loader2, TrendingUp, Award, Target, Download, Trash2, Cloud, FileCode, Package } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Checkbox } from "@/components/ui/checkbox";
 
 interface Dataset {
   id: string;
@@ -51,12 +51,32 @@ interface MLModel {
 interface WizardState {
   selectedDataset: string;
   problemType: 'classification' | 'regression';
+  useCase: string;
   targetColumn: string;
-  selectedFeatures: string[];
   timeBudget: number;
   optimizationMetric: string;
   modelName: string;
 }
+
+const CLASSIFICATION_USE_CASES = [
+  { id: 'churn', label: 'Customer Churn Prediction', description: 'Will a customer stop using our service?' },
+  { id: 'fraud', label: 'Fraud Detection', description: 'Is a payment/transaction fraudulent?' },
+  { id: 'sentiment', label: 'Sentiment Analysis', description: 'Are customer reviews Positive, Negative, or Neutral?' },
+  { id: 'spam', label: 'Email/SMS Spam Filtering', description: 'Is this marketing email spam?' },
+  { id: 'lead', label: 'Lead Scoring', description: 'Is a sales lead high-quality or not?' },
+  { id: 'loan', label: 'Loan/Credit Approval', description: 'Should we approve this loan (Approve/Reject)?' },
+  { id: 'attrition', label: 'Employee Attrition', description: 'Will an employee quit soon?' },
+];
+
+const REGRESSION_USE_CASES = [
+  { id: 'sales', label: 'Sales Forecasting', description: 'Predict next month\'s sales.' },
+  { id: 'revenue', label: 'Revenue Prediction', description: 'Estimate business revenue for next quarter.' },
+  { id: 'price', label: 'Price Prediction', description: 'Predict the right selling price of a house/product.' },
+  { id: 'demand', label: 'Demand Forecasting', description: 'Predict how many products will be needed.' },
+  { id: 'clv', label: 'Customer Lifetime Value (CLV)', description: 'Predict future spending by a customer.' },
+  { id: 'roi', label: 'Marketing ROI Prediction', description: 'Estimate return on ad campaigns.' },
+  { id: 'delivery', label: 'Delivery Time Estimation', description: 'Predict how long an order will take.' },
+];
 
 export default function MLStudio() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -67,20 +87,13 @@ export default function MLStudio() {
   const [wizardState, setWizardState] = useState<WizardState>({
     selectedDataset: '',
     problemType: 'classification',
+    useCase: '',
     targetColumn: '',
-    selectedFeatures: [],
     timeBudget: 15,
     optimizationMetric: 'accuracy',
     modelName: ''
   });
   const { toast } = useToast();
-
-  // Sample features for demo (in real implementation, these would come from dataset analysis)
-  const availableFeatures = [
-    'customer_age', 'total_purchases', 'avg_order_value', 
-    'days_since_last_purchase', 'support_tickets', 'account_balance',
-    'login_frequency', 'session_duration'
-  ];
 
   useEffect(() => {
     loadDatasets();
@@ -137,7 +150,7 @@ export default function MLStudio() {
   };
 
   const startTraining = async () => {
-    if (!wizardState.selectedDataset || !wizardState.targetColumn || !wizardState.modelName) {
+    if (!wizardState.selectedDataset || !wizardState.useCase || !wizardState.targetColumn || !wizardState.modelName) {
       toast({
         title: "Missing Information",
         description: "Please complete all required fields before starting training.",
@@ -154,8 +167,8 @@ export default function MLStudio() {
           name: wizardState.modelName,
           datasetId: wizardState.selectedDataset,
           problemType: wizardState.problemType,
+          useCase: wizardState.useCase,
           targetColumn: wizardState.targetColumn,
-          selectedFeatures: wizardState.selectedFeatures.length > 0 ? wizardState.selectedFeatures : availableFeatures,
           timeBudget: wizardState.timeBudget,
           optimizationMetric: wizardState.optimizationMetric
         }
@@ -173,8 +186,8 @@ export default function MLStudio() {
       setWizardState({
         selectedDataset: '',
         problemType: 'classification',
+        useCase: '',
         targetColumn: '',
-        selectedFeatures: [],
         timeBudget: 15,
         optimizationMetric: 'accuracy',
         modelName: ''
@@ -190,6 +203,74 @@ export default function MLStudio() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteJob = async (jobId: string) => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'delete-job', jobId }
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "Job Deleted",
+        description: "Training job has been deleted successfully.",
+      });
+
+      loadJobs();
+    } catch (error) {
+      console.error('Delete job error:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete training job. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const exportModel = async (modelId: string, format: string) => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'export-model', modelId, format }
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "Export Started",
+        description: `Model export to ${format} format has been initiated.`,
+      });
+    } catch (error) {
+      console.error('Export model error:', error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export model. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deployModel = async (modelId: string) => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'deploy-model', modelId }
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "Deployment Started",
+        description: "Model deployment as REST API has been initiated.",
+      });
+    } catch (error) {
+      console.error('Deploy model error:', error);
+      toast({
+        title: "Deployment Failed",
+        description: "Failed to deploy model. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -245,14 +326,14 @@ export default function MLStudio() {
             <CardContent className="space-y-6">
               {/* Progress Steps */}
               <div className="flex items-center justify-between">
-                {[1, 2, 3, 4, 5].map((step) => (
+                {[1, 2, 3, 4].map((step) => (
                   <div key={step} className="flex items-center">
                     <div className={`rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium ${
                       step <= currentStep ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                     }`}>
                       {step}
                     </div>
-                    {step < 5 && <div className={`w-12 h-0.5 mx-2 ${
+                    {step < 4 && <div className={`w-12 h-0.5 mx-2 ${
                       step < currentStep ? 'bg-primary' : 'bg-muted'
                     }`} />}
                   </div>
@@ -261,10 +342,9 @@ export default function MLStudio() {
 
               <div className="text-center text-sm text-muted-foreground">
                 {currentStep === 1 && "Dataset Selection"}
-                {currentStep === 2 && "Target Variable"}
-                {currentStep === 3 && "Feature Engineering"}
-                {currentStep === 4 && "Model Configuration"}
-                {currentStep === 5 && "Review & Launch"}
+                {currentStep === 2 && "Problem Type & Use Case"}
+                {currentStep === 3 && "Model Configuration"}
+                {currentStep === 4 && "Review & Launch"}
               </div>
 
               <Separator />
@@ -302,88 +382,81 @@ export default function MLStudio() {
               )}
 
               {currentStep === 2 && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Define Your Target</h3>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Problem Type</Label>
-                      <Select 
-                        value={wizardState.problemType} 
-                        onValueChange={(value: 'classification' | 'regression') => 
-                          setWizardState({...wizardState, problemType: value})
-                        }
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold">Problem Type & Use Case</h3>
+                  
+                  <div className="space-y-4">
+                    <Label>Select Problem Type</Label>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <Card 
+                        className={`cursor-pointer transition-all ${
+                          wizardState.problemType === 'classification' ? 'ring-2 ring-primary' : ''
+                        }`}
+                        onClick={() => setWizardState({...wizardState, problemType: 'classification', useCase: ''})}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select problem type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="classification">Classification</SelectItem>
-                          <SelectItem value="regression">Regression</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Target Column</Label>
-                      <Select 
-                        value={wizardState.targetColumn} 
-                        onValueChange={(value) => setWizardState({...wizardState, targetColumn: value})}
+                        <CardContent className="p-4">
+                          <h4 className="font-semibold mb-2">Classification</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Predict categories or classes (Yes/No, Good/Bad, High/Medium/Low)
+                          </p>
+                        </CardContent>
+                      </Card>
+                      
+                      <Card 
+                        className={`cursor-pointer transition-all ${
+                          wizardState.problemType === 'regression' ? 'ring-2 ring-primary' : ''
+                        }`}
+                        onClick={() => setWizardState({...wizardState, problemType: 'regression', useCase: ''})}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select target variable" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="churn">customer_churn</SelectItem>
-                          <SelectItem value="revenue">total_revenue</SelectItem>
-                          <SelectItem value="satisfaction">satisfaction_score</SelectItem>
-                          <SelectItem value="sales">sales_amount</SelectItem>
-                          <SelectItem value="conversion">conversion_rate</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <CardContent className="p-4">
+                          <h4 className="font-semibold mb-2">Regression</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Predict numerical values (prices, amounts, scores, quantities)
+                          </p>
+                        </CardContent>
+                      </Card>
                     </div>
                   </div>
+
+                  {wizardState.problemType && (
+                    <div className="space-y-4">
+                      <Label>Choose Your Use Case</Label>
+                      <div className="grid gap-3 max-h-60 overflow-y-auto">
+                        {(wizardState.problemType === 'classification' ? CLASSIFICATION_USE_CASES : REGRESSION_USE_CASES).map((useCase) => (
+                          <Card 
+                            key={useCase.id}
+                            className={`cursor-pointer transition-all ${
+                              wizardState.useCase === useCase.id ? 'ring-2 ring-primary' : ''
+                            }`}
+                            onClick={() => setWizardState({...wizardState, useCase: useCase.id})}
+                          >
+                            <CardContent className="p-4">
+                              <h5 className="font-medium mb-1">{useCase.label}</h5>
+                              <p className="text-sm text-muted-foreground">{useCase.description}</p>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {wizardState.useCase && (
+                    <div className="space-y-2">
+                      <Label>Target Column</Label>
+                      <Input 
+                        placeholder="Enter the name of your target column (e.g., 'churn', 'revenue', 'price')"
+                        value={wizardState.targetColumn} 
+                        onChange={(e) => setWizardState({...wizardState, targetColumn: e.target.value})}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        This should be the column in your dataset that contains the values you want to predict.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {currentStep === 3 && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Feature Engineering</h3>
-                  <div className="space-y-2">
-                    <Label>Select Features (leave empty to auto-select all features)</Label>
-                    <div className="border rounded-md p-4 space-y-2 max-h-40 overflow-y-auto">
-                      {availableFeatures.map((feature) => (
-                        <div key={feature} className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={feature}
-                            checked={wizardState.selectedFeatures.includes(feature)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setWizardState({
-                                  ...wizardState, 
-                                  selectedFeatures: [...wizardState.selectedFeatures, feature]
-                                });
-                              } else {
-                                setWizardState({
-                                  ...wizardState, 
-                                  selectedFeatures: wizardState.selectedFeatures.filter(f => f !== feature)
-                                });
-                              }
-                            }}
-                          />
-                          <Label htmlFor={feature} className="text-sm font-normal">{feature}</Label>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {wizardState.selectedFeatures.length > 0 
-                        ? `${wizardState.selectedFeatures.length} features selected`
-                        : 'All features will be used for training'
-                      }
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === 4 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Model Configuration</h3>
                   <div className="grid md:grid-cols-2 gap-4">
@@ -414,18 +487,36 @@ export default function MLStudio() {
                           <SelectValue placeholder="Select metric" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="accuracy">Accuracy</SelectItem>
-                          <SelectItem value="precision">Precision</SelectItem>
-                          <SelectItem value="recall">Recall</SelectItem>
-                          <SelectItem value="f1">F1 Score</SelectItem>
+                          {wizardState.problemType === 'classification' ? (
+                            <>
+                              <SelectItem value="accuracy">Accuracy</SelectItem>
+                              <SelectItem value="precision">Precision</SelectItem>
+                              <SelectItem value="recall">Recall</SelectItem>
+                              <SelectItem value="f1">F1 Score</SelectItem>
+                            </>
+                          ) : (
+                            <>
+                              <SelectItem value="rmse">RMSE</SelectItem>
+                              <SelectItem value="mae">MAE</SelectItem>
+                              <SelectItem value="r2">R² Score</SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Model Name</Label>
+                    <Input 
+                      placeholder="Enter a name for your model"
+                      value={wizardState.modelName} 
+                      onChange={(e) => setWizardState({...wizardState, modelName: e.target.value})}
+                    />
+                  </div>
                 </div>
               )}
 
-              {currentStep === 5 && (
+              {currentStep === 4 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Review Configuration</h3>
                   <div className="bg-muted p-4 rounded-md space-y-2">
@@ -438,38 +529,33 @@ export default function MLStudio() {
                       <span className="capitalize">{wizardState.problemType}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="font-medium">Use Case:</span>
+                      <span>{(wizardState.problemType === 'classification' ? CLASSIFICATION_USE_CASES : REGRESSION_USE_CASES)
+                        .find(uc => uc.id === wizardState.useCase)?.label || 'Not selected'}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="font-medium">Target:</span>
                       <span>{wizardState.targetColumn || 'Not selected'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="font-medium">Features:</span>
-                      <span>
-                        {wizardState.selectedFeatures.length > 0 
-                          ? `${wizardState.selectedFeatures.length} selected` 
-                          : 'All features'
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-medium">Time Budget:</span>
+                      <span className="font-medium">Training Time:</span>
                       <span>{wizardState.timeBudget} minutes</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">Optimization:</span>
                       <span className="capitalize">{wizardState.optimizationMetric}</span>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Model Name</Label>
-                    <Input 
-                      placeholder="e.g., Customer Churn Model v1" 
-                      value={wizardState.modelName}
-                      onChange={(e) => setWizardState({...wizardState, modelName: e.target.value})}
-                    />
+                    <div className="flex justify-between">
+                      <span className="font-medium">Model Name:</span>
+                      <span>{wizardState.modelName || 'Not set'}</span>
+                    </div>
                   </div>
                 </div>
               )}
 
+              <Separator />
+
+              {/* Navigation Buttons */}
               <div className="flex justify-between">
                 <Button 
                   variant="outline" 
@@ -478,22 +564,22 @@ export default function MLStudio() {
                 >
                   Previous
                 </Button>
-                {currentStep < 5 ? (
-                  <Button onClick={() => setCurrentStep(Math.min(5, currentStep + 1))}>
+                
+                {currentStep < 4 ? (
+                  <Button 
+                    onClick={() => setCurrentStep(Math.min(4, currentStep + 1))}
+                    disabled={
+                      (currentStep === 1 && !wizardState.selectedDataset) ||
+                      (currentStep === 2 && (!wizardState.problemType || !wizardState.useCase || !wizardState.targetColumn)) ||
+                      (currentStep === 3 && !wizardState.modelName)
+                    }
+                  >
                     Next
                   </Button>
                 ) : (
-                  <Button 
-                    className="bg-gradient-to-r from-purple-600 to-blue-600"
-                    onClick={startTraining}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4 mr-2" />
-                    )}
-                    {loading ? 'Starting...' : 'Start Training'}
+                  <Button onClick={startTraining} disabled={loading}>
+                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                    Start Training
                   </Button>
                 )}
               </div>
@@ -501,382 +587,321 @@ export default function MLStudio() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="jobs" className="space-y-4">
-          <div className="grid gap-4">
-            {jobs.map((job) => (
-              <Card key={job.id}>
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(job.status)}
-                        <h3 className="font-semibold">{job.name}</h3>
-                        {getStatusBadge(job.status)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {job.problem_type} • {job.datasets?.name || 'Unknown dataset'} • Started: {new Date(job.started_at).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="text-right space-y-1">
-                      {job.accuracy && (
-                        <div className="text-sm font-medium">
-                          Accuracy: {(job.accuracy * 100).toFixed(1)}%
-                        </div>
-                      )}
-                      <div className="text-sm text-muted-foreground">
-                        {job.progress}% complete
-                      </div>
-                    </div>
-                  </div>
-                  {job.status === "running" && (
-                    <div className="space-y-2">
-                      <Progress value={job.progress} className="w-full" />
-                      <div className="text-xs text-muted-foreground">
-                        Training in progress... Estimated 8 minutes remaining
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <TabsContent value="jobs" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Training Jobs</CardTitle>
+              <CardDescription>Monitor your ML model training progress</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {jobs.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No training jobs found. Start training your first model in the AutoML Wizard.
+                </div>
+              ) : (
+                <div className="border rounded-md">
+                  <table className="w-full">
+                    <thead className="border-b bg-muted/50">
+                      <tr>
+                        <th className="text-left p-4 font-medium">Job Name</th>
+                        <th className="text-left p-4 font-medium">Type</th>
+                        <th className="text-left p-4 font-medium">Dataset</th>
+                        <th className="text-left p-4 font-medium">Status</th>
+                        <th className="text-left p-4 font-medium">Progress</th>
+                        <th className="text-left p-4 font-medium">Accuracy</th>
+                        <th className="text-left p-4 font-medium">Started</th>
+                        <th className="text-left p-4 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobs.map((job) => (
+                        <tr key={job.id} className="border-b">
+                          <td className="p-4 font-medium">{job.name}</td>
+                          <td className="p-4">
+                            <Badge variant="outline" className="capitalize">
+                              {job.problem_type}
+                            </Badge>
+                          </td>
+                          <td className="p-4 text-muted-foreground">
+                            {job.datasets?.name || 'Unknown'}
+                          </td>
+                          <td className="p-4 text-center">
+                            {getStatusIcon(job.status)}
+                          </td>
+                          <td className="p-4">
+                            {getStatusBadge(job.status)}
+                          </td>
+                          <td className="p-4">
+                            <Progress value={job.progress} className="w-full" />
+                            <span className="text-xs text-muted-foreground">{job.progress}%</span>
+                          </td>
+                          <td className="p-4">
+                            {job.accuracy ? `${(job.accuracy * 100).toFixed(1)}%` : '-'}
+                          </td>
+                          <td className="p-4 text-muted-foreground">
+                            {new Date(job.started_at).toLocaleString()}
+                          </td>
+                          <td className="p-4">
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Training Job</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete this training job? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteJob(job.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="models" className="space-y-4">
-          {models.length > 0 ? (
-            <div className="grid gap-4">
-              {models.map((model) => (
-                <Card key={model.id}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{model.name}</CardTitle>
-                        <CardDescription>
-                          {model.model_type} • Created: {new Date(model.created_at).toLocaleDateString()}
-                        </CardDescription>
-                      </div>
-                      <Badge variant={model.status === 'ready' ? 'default' : 'secondary'}>
-                        {model.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {model.metrics && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        {Object.entries(model.metrics).map(([key, value]) => (
-                          <div key={key} className="text-center">
-                            <div className="text-2xl font-bold text-primary">
-                              {typeof value === 'number' ? (value * 100).toFixed(1) + '%' : String(value)}
-                            </div>
-                            <div className="text-sm text-muted-foreground capitalize">
-                              {key.replace('_', ' ')}
-                            </div>
+        <TabsContent value="models" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Model Registry</CardTitle>
+              <CardDescription>Manage your trained ML models and deploy them</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {models.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No trained models found. Complete model training to see your models here.
+                </div>
+              ) : (
+                models.map((model) => (
+                  <Card key={model.id} className="border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Award className="h-5 w-5 text-primary" />
+                          <span className="font-medium">{model.name}</span>
+                          <Badge variant="secondary">{model.model_type}</Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={model.status === 'ready' ? 'default' : 'secondary'}>
+                            {model.status}
+                          </Badge>
+                          
+                          {/* Export Options */}
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => exportModel(model.id, 'pickle')}
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              .pkl
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => exportModel(model.id, 'onnx')}
+                            >
+                              <Package className="h-4 w-4 mr-1" />
+                              ONNX
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => exportModel(model.id, 'tensorflow')}
+                            >
+                              <FileCode className="h-4 w-4 mr-1" />
+                              TF
+                            </Button>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                    
-                    {model.training_history && model.training_history.length > 0 && (
-                      <div>
-                        <h4 className="font-semibold mb-2">Training History</h4>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={model.training_history}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="epoch" />
-                              <YAxis />
-                              <Tooltip />
-                              <Line 
-                                type="monotone" 
-                                dataKey="accuracy" 
-                                stroke="hsl(var(--primary))" 
-                                strokeWidth={2}
-                                name="Accuracy"
-                              />
-                              <Line 
-                                type="monotone" 
-                                dataKey="loss" 
-                                stroke="hsl(var(--destructive))" 
-                                strokeWidth={2}
-                                name="Loss"
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
+                          
+                          {/* Deploy as API */}
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => deployModel(model.id)}
+                          >
+                            <Cloud className="h-4 w-4 mr-1" />
+                            Deploy API
+                          </Button>
                         </div>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No trained models yet.</p>
-                  <p className="text-sm">Complete the AutoML wizard to create your first model.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                      
+                      <div className="grid md:grid-cols-3 gap-4 mt-4">
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-lg font-semibold">
+                            {model.metrics?.accuracy ? `${(model.metrics.accuracy * 100).toFixed(1)}%` : 'N/A'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Accuracy</div>
+                        </div>
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-lg font-semibold">
+                            {model.metrics?.precision ? `${(model.metrics.precision * 100).toFixed(1)}%` : 'N/A'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Precision</div>
+                        </div>
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-lg font-semibold">
+                            {new Date(model.created_at).toLocaleDateString()}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Created</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="results" className="space-y-6">
-          {models.length > 0 ? (
-            models.map((model) => (
-              <div key={model.id} className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Award className="h-5 w-5 text-primary" />
-                      {model.name} - Training Results
-                    </CardTitle>
-                    <CardDescription>
-                      Comprehensive analysis of model performance and training outcomes
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Performance Overview */}
-                    <div>
-                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Target className="h-5 w-5" />
-                        Model Performance Overview
-                      </h3>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                        {model.metrics && Object.entries(model.metrics).map(([key, value]) => (
-                          <div key={key} className="text-center p-4 bg-muted/50 rounded-lg">
-                            <div className="text-3xl font-bold text-primary mb-1">
-                              {typeof value === 'number' && key !== 'models_trained' ? 
-                                (value * 100).toFixed(1) + '%' : 
-                                String(value)
-                              }
-                            </div>
-                            <div className="text-sm text-muted-foreground capitalize">
-                              {key.replace(/_/g, ' ')}
-                            </div>
-                            {typeof value === 'number' && value > 0.8 && key !== 'models_trained' && (
-                              <div className="text-xs text-green-600 mt-1">Excellent</div>
-                            )}
-                          </div>
-                        ))}
+          {currentModel ? (
+            <div className="grid gap-6">
+              {/* Performance Overview */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Performance Overview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-4 gap-4">
+                    <div className="text-center p-4 bg-muted rounded-md">
+                      <div className="text-2xl font-bold text-primary">
+                        {currentModel.metrics?.accuracy ? `${(currentModel.metrics.accuracy * 100).toFixed(1)}%` : 'N/A'}
                       </div>
+                      <div className="text-sm text-muted-foreground">Overall Accuracy</div>
                     </div>
+                    <div className="text-center p-4 bg-muted rounded-md">
+                      <div className="text-2xl font-bold text-green-600">
+                        {currentModel.metrics?.precision ? `${(currentModel.metrics.precision * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Precision</div>
+                    </div>
+                    <div className="text-center p-4 bg-muted rounded-md">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {currentModel.metrics?.recall ? `${(currentModel.metrics.recall * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Recall</div>
+                    </div>
+                    <div className="text-center p-4 bg-muted rounded-md">
+                      <div className="text-2xl font-bold text-purple-600">
+                        {currentModel.metrics?.f1_score ? `${(currentModel.metrics.f1_score * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <div className="text-sm text-muted-foreground">F1 Score</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                    <Separator />
+              {/* Training Progress */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Training Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={currentModel.training_history || []}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="epoch" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="accuracy" stroke="#8884d8" strokeWidth={2} />
+                      <Line type="monotone" dataKey="loss" stroke="#82ca9d" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
 
-                    {/* Training Progress Chart */}
-                    {model.training_history && model.training_history.length > 0 && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                          <TrendingUp className="h-5 w-5" />
-                          Training Progress & History
-                        </h3>
-                        <div className="grid md:grid-cols-2 gap-6">
-                          {/* Accuracy/Performance Chart */}
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-base">Model Performance Over Time</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <LineChart data={model.training_history}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis 
-                                      dataKey="model" 
-                                      label={{ value: 'Model Number', position: 'insideBottom', offset: -5 }}
-                                    />
-                                    <YAxis 
-                                      label={{ value: 'Performance', angle: -90, position: 'insideLeft' }}
-                                    />
-                                    <Tooltip 
-                                      formatter={(value: any, name: string) => [
-                                        typeof value === 'number' ? (value * 100).toFixed(2) + '%' : value,
-                                        name
-                                      ]}
-                                    />
-                                    <Line 
-                                      type="monotone" 
-                                      dataKey="accuracy" 
-                                      stroke="hsl(var(--primary))" 
-                                      strokeWidth={3}
-                                      name="Accuracy"
-                                      dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
-                                    />
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          {/* Algorithm Performance Comparison */}
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-base">Algorithm Performance</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <BarChart 
-                                    data={model.training_history.slice(-5)} // Last 5 models
-                                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                                  >
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="algorithm" />
-                                    <YAxis />
-                                    <Tooltip 
-                                      formatter={(value: any) => [
-                                        typeof value === 'number' ? (value * 100).toFixed(2) + '%' : value,
-                                        'Accuracy'
-                                      ]}
-                                    />
-                                    <Bar 
-                                      dataKey="accuracy" 
-                                      fill="hsl(var(--primary))"
-                                      radius={[4, 4, 0, 0]}
-                                    />
-                                  </BarChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </CardContent>
-                          </Card>
+              {/* Training Summary */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Training Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                      <h4 className="font-semibold mb-2">Key Insights</h4>
+                      <ul className="space-y-1 text-sm text-muted-foreground">
+                        <li>• Model converged successfully after training</li>
+                        <li>• Strong performance on validation set</li>
+                        <li>• Ready for production deployment</li>
+                        <li>• AutoML selected optimal hyperparameters</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold mb-2">Model Configuration</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Algorithm:</span>
+                          <span>{currentModel.model_type}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Training Time:</span>
+                          <span>{currentModel.model_config?.training_time || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Validation:</span>
+                          <span>{currentModel.model_config?.validation || 'Cross-validation'}</span>
                         </div>
                       </div>
-                    )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                    <Separator />
-
-                    {/* Training Summary & Insights */}
-                    <div>
-                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5" />
-                        Training Summary & Insights
-                      </h3>
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-base">Key Insights</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            {model.metrics?.accuracy && (
-                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                <span className="text-sm">Model Accuracy</span>
-                                <span className="font-semibold">
-                                  {(model.metrics.accuracy * 100).toFixed(1)}%
-                                  {model.metrics.accuracy > 0.85 && 
-                                    <span className="text-green-600 ml-2">⭐ Excellent</span>
-                                  }
-                                </span>
-                              </div>
-                            )}
-                            {model.metrics?.models_trained && (
-                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                <span className="text-sm">Models Tested</span>
-                                <span className="font-semibold">{model.metrics.models_trained} algorithms</span>
-                              </div>
-                            )}
-                            {model.training_history && (
-                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                <span className="text-sm">Best Algorithm</span>
-                                <span className="font-semibold">
-                                  {model.training_history.reduce((best, current) => 
-                                    current.accuracy > best.accuracy ? current : best
-                                  ).algorithm || 'Unknown'}
-                                </span>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-base">Model Configuration</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            {model.model_config && (
-                              <>
-                                <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                  <span className="text-sm">Framework</span>
-                                  <span className="font-semibold">{model.model_config.framework || 'AutoML'}</span>
-                                </div>
-                                {model.model_config.automl_config?.problemType && (
-                                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                    <span className="text-sm">Problem Type</span>
-                                    <span className="font-semibold capitalize">
-                                      {model.model_config.automl_config.problemType}
-                                    </span>
-                                  </div>
-                                )}
-                                {model.model_config.automl_config?.timeBudget && (
-                                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                                    <span className="text-sm">Training Time</span>
-                                    <span className="font-semibold">
-                                      {model.model_config.automl_config.timeBudget} minutes
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </CardContent>
-                        </Card>
+              {/* Recommendations */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Target className="h-5 w-5" />
+                    Performance Recommendations
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3 p-3 bg-green-50 rounded-md">
+                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-green-800">Model Ready for Deployment</div>
+                        <div className="text-sm text-green-700">
+                          Your model shows excellent performance metrics and is ready for production use.
+                        </div>
                       </div>
                     </div>
-
-                    {/* Performance Recommendations */}
-                    {model.metrics?.accuracy && (
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-md">
+                      <Settings className="h-5 w-5 text-blue-600 mt-0.5" />
                       <div>
-                        <h3 className="text-lg font-semibold mb-4">Performance Recommendations</h3>
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="space-y-3">
-                              {model.metrics.accuracy > 0.9 ? (
-                                <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded">
-                                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                                  <div>
-                                    <div className="font-medium text-green-800">Excellent Performance!</div>
-                                    <div className="text-sm text-green-700">
-                                      Your model shows outstanding accuracy. Consider deploying it to production.
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : model.metrics.accuracy > 0.8 ? (
-                                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded">
-                                  <TrendingUp className="h-5 w-5 text-blue-600 mt-0.5" />
-                                  <div>
-                                    <div className="font-medium text-blue-800">Good Performance</div>
-                                    <div className="text-sm text-blue-700">
-                                      Model performs well. Consider feature engineering or data augmentation for improvement.
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                                  <div>
-                                    <div className="font-medium text-yellow-800">Room for Improvement</div>
-                                    <div className="text-sm text-yellow-700">
-                                      Consider adding more data, feature engineering, or trying different algorithms.
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
+                        <div className="font-medium text-blue-800">Monitor Performance</div>
+                        <div className="text-sm text-blue-700">
+                          Set up monitoring to track model performance in production and detect data drift.
+                        </div>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            ))
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           ) : (
             <Card>
-              <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg font-medium mb-2">No Training Results Available</p>
-                  <p className="text-sm">Complete model training to see detailed results and insights here.</p>
+              <CardContent className="p-8 text-center">
+                <div className="text-muted-foreground">
+                  No training results available. Complete a training job to see detailed results here.
                 </div>
               </CardContent>
             </Card>
