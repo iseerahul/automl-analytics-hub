@@ -17,16 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  {
-    name: "Overview",
-    href: "/",
-    icon: BarChart3,
-  },
-  {
-    name: "Quick Insights",
-    href: "/quick-insights",
-    icon: Zap,
-  },
+  // Removed Overview and Quick Insights from top navigation
 ];
 
 const coreServices = [
@@ -55,11 +46,7 @@ const coreServices = [
     href: "/recommend-pro",
     icon: Target,
   },
-  {
-    name: "AlertIQ",
-    href: "/alert-iq",
-    icon: Bell,
-  },
+  // Removed AlertIQ from core services
   {
     name: "DashboardStudio",
     href: "/dashboard-studio",

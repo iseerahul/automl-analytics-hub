@@ -8,14 +8,13 @@ import { AuthProvider } from "./hooks/useAuth";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import LandingPage from "./pages/LandingPage";
-import Overview from "./pages/Overview";
-import QuickInsights from "./pages/QuickInsights";
+// Removed: Overview, QuickInsights
 import DataConnect from "./pages/DataConnect";
 import MLStudio from "./pages/MLStudio";
 import ForecastPro from "./pages/ForecastPro";
 import SegmentAI from "./pages/SegmentAI";
 import RecommendPro from "./pages/RecommendPro";
-import AlertIQ from "./pages/AlertIQ";
+// Removed: AlertIQ
 import DashboardStudio from "./pages/DashboardStudio";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -35,15 +34,12 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <Routes>
-                    <Route path="/" element={<Overview />} />
-                    <Route path="/dashboard" element={<Overview />} />
-                    <Route path="/quick-insights" element={<QuickInsights />} />
+                    <Route path="/" element={<MLStudio />} />
                     <Route path="/dataconnect" element={<DataConnect />} />
                     <Route path="/insight-ai" element={<MLStudio />} />
                     <Route path="/forecast-pro" element={<ForecastPro />} />
                     <Route path="/segment-ai" element={<SegmentAI />} />
                     <Route path="/recommend-pro" element={<RecommendPro />} />
-                    <Route path="/alert-iq" element={<AlertIQ />} />
                     <Route path="/dashboard-studio" element={<DashboardStudio />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="*" element={<NotFound />} />

@@ -237,7 +237,10 @@ export default function MLStudio() {
       });
 
       if (response.error) throw response.error;
-
+      const downloadUrl = response.data?.downloadUrl || response.data?.uploadUrl;
+      if (downloadUrl) {
+        window.open(downloadUrl, '_blank');
+      }
       toast({
         title: "Export Started",
         description: `Model export to ${format} format has been initiated.`,
@@ -259,10 +262,10 @@ export default function MLStudio() {
       });
 
       if (response.error) throw response.error;
-
+      const endpoint = response.data?.endpoint;
       toast({
         title: "Deployment Started",
-        description: "Model deployment as REST API has been initiated.",
+        description: endpoint ? `API endpoint: ${endpoint}` : "Model deployment as REST API has been initiated.",
       });
     } catch (error) {
       console.error('Deploy model error:', error);
@@ -271,6 +274,20 @@ export default function MLStudio() {
         description: "Failed to deploy model. Please try again.",
         variant: "destructive"
       });
+    }
+  };
+
+  const deleteModel = async (modelId: string) => {
+    try {
+      const response = await supabase.functions.invoke('ml-training', {
+        body: { action: 'delete-model', modelId }
+      });
+      if (response.error) throw response.error;
+      toast({ title: 'Model Deleted', description: 'Model removed from registry.' });
+      loadModels();
+    } catch (error) {
+      console.error('Delete model error:', error);
+      toast({ title: 'Delete Failed', description: 'Could not delete model.', variant: 'destructive' });
     }
   };
 
@@ -737,6 +754,29 @@ export default function MLStudio() {
                             <Cloud className="h-4 w-4 mr-1" />
                             Deploy API
                           </Button>
+
+                          {/* Delete Model */}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Model</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this model? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deleteModel(model.id)}>
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
                       
