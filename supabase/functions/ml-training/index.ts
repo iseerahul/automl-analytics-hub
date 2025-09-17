@@ -263,20 +263,43 @@ serve(async (req) => {
         .single();
       if (mErr) throw mErr;
 
-      // Simulate export by creating a signed URL placeholder
-      const fileName = `${model.name}.${format === 'tensorflow' ? 'tf' : format}`;
-      const { data: signed, error: sErr } = await supabaseClient
+      // Create a simple artifact placeholder and upload to Storage, then return a signed download URL
+      const ext = format === 'tensorflow' ? 'zip' : (format === 'pickle' ? 'pkl' : format);
+      const path = `${user.id}/${model.id}.${ext}`;
+
+      // Minimal binary payload to represent an exported artifact
+      const payload = new Blob([
+        JSON.stringify({
+          model_id: model.id,
+          model_name: model.name,
+          format,
+          created_at: new Date().toISOString()
+        })
+      ], { type: 'application/octet-stream' });
+
+      const { error: uploadErr } = await supabaseClient
         .storage
         .from('exports')
-        .createSignedUploadUrl(fileName);
-      if (sErr) {
-        // If bucket doesn't exist or method unsupported in this environment, just return a stub
-        return new Response(JSON.stringify({ success: true, downloadUrl: null, message: 'Export scheduled' }), {
+        .upload(path, payload, { upsert: true, contentType: 'application/octet-stream' });
+      if (uploadErr) {
+        return new Response(JSON.stringify({ success: false, error: uploadErr.message }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
         });
       }
 
-      return new Response(JSON.stringify({ success: true, uploadUrl: signed?.signedUrl, path: fileName }), {
+      const { data: signedUrlData, error: signErr } = await supabaseClient
+        .storage
+        .from('exports')
+        .createSignedUrl(path, 60 * 60); // 1 hour
+      if (signErr) {
+        return new Response(JSON.stringify({ success: false, error: signErr.message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, downloadUrl: signedUrlData?.signedUrl, path }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
