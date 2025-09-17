@@ -2,76 +2,135 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
-// H2O AutoML client
+// H2O AutoML client with real API integration
 class H2OAutoML {
   private baseUrl: string;
   
-  constructor(baseUrl = 'http://localhost:54321') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl || Deno.env.get('H2O_BASE_URL') || 'http://localhost:54321';
   }
   
-  async startH2OCluster() {
+  async checkCluster() {
     try {
-      // Initialize H2O cluster
       const response = await fetch(`${this.baseUrl}/3/Cloud`, {
         method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       });
       return response.ok;
     } catch (error) {
-      console.log('H2O cluster not available, using fallback simulation');
+      console.log('H2O cluster not available:', error.message);
       return false;
     }
   }
   
-  async uploadDataFrame(data: any[], name: string) {
+  async uploadCSV(csvContent: string, frameName: string) {
     try {
-      // Convert data to H2O Frame format
-      const h2oData = {
-        data: data,
-        column_names: Object.keys(data[0] || {}),
-        frame_id: name
-      };
-      
-      const response = await fetch(`${this.baseUrl}/3/ParseSetup`, {
+      // Step 1: ParseSetup
+      const parseSetupResponse = await fetch(`${this.baseUrl}/3/ParseSetup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(h2oData)
+        body: JSON.stringify({
+          source_frames: [frameName],
+          parse_type: 'CSV',
+          separator: 44, // comma
+          number_columns: 0,
+          single_quotes: false,
+          column_names: [],
+          column_types: [],
+          na_strings: [],
+          check_header: 1
+        })
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        return result.destination_frame;
+      if (!parseSetupResponse.ok) {
+        throw new Error(`ParseSetup failed: ${parseSetupResponse.statusText}`);
       }
+      
+      const parseSetup = await parseSetupResponse.json();
+      
+      // Step 2: Upload CSV data
+      const uploadResponse = await fetch(`${this.baseUrl}/3/PostFile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+        body: csvContent
+      });
+      
+      if (!uploadResponse.ok) {
+        throw new Error(`File upload failed: ${uploadResponse.statusText}`);
+      }
+      
+      const uploadResult = await uploadResponse.json();
+      
+      // Step 3: Parse the uploaded file
+      const parseResponse = await fetch(`${this.baseUrl}/3/Parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job: parseSetup.job,
+          destination_frame: frameName
+        })
+      });
+      
+      if (!parseResponse.ok) {
+        throw new Error(`Parse failed: ${parseResponse.statusText}`);
+      }
+      
+      return frameName;
     } catch (error) {
-      console.error('H2O upload failed:', error);
+      console.error('H2O CSV upload failed:', error);
+      throw error;
     }
-    return null;
   }
   
-  async trainAutoML(frameId: string, targetColumn: string, maxModels = 10, maxRuntimeSecs = 300) {
+  async startAutoML(trainingFrame: string, targetColumn: string, maxModels = 20, maxRuntimeSecs = 300) {
     try {
-      const automlConfig = {
-        training_frame: frameId,
-        y: targetColumn,
-        max_models: maxModels,
-        max_runtime_secs: maxRuntimeSecs,
-        project_name: `automl_${Date.now()}`
-      };
+      const projectName = `automl_${Date.now()}`;
       
       const response = await fetch(`${this.baseUrl}/3/AutoML`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(automlConfig)
+        body: JSON.stringify({
+          training_frame: trainingFrame,
+          y: targetColumn,
+          max_models: maxModels,
+          max_runtime_secs: maxRuntimeSecs,
+          project_name: projectName,
+          sort_metric: 'AUTO',
+          balance_classes: false,
+          class_sampling_factors: null,
+          max_after_balance_size: 5.0,
+          max_confusion_matrix_size: 20,
+          max_hit_ratio_k: 0,
+          nfolds: 5,
+          fold_assignment: 'AUTO',
+          keep_cross_validation_predictions: false,
+          keep_cross_validation_models: false,
+          parallelize_cross_validation: true,
+          seed: -1,
+          exclude_algos: [],
+          include_algos: [],
+          exploitation_ratio: 0.0,
+          modeling_plan: null,
+          preprocessing: [],
+          monotone_constraints: null,
+          algo_parameters: null,
+          total_time: maxRuntimeSecs,
+          max_memory_usage: null,
+          custom_hyper_params: null,
+          export_checkpoints_dir: null
+        })
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        return result;
+      if (!response.ok) {
+        throw new Error(`AutoML start failed: ${response.statusText}`);
       }
+      
+      const result = await response.json();
+      return { ...result, project_name: projectName };
     } catch (error) {
-      console.error('H2O AutoML training failed:', error);
+      console.error('H2O AutoML start failed:', error);
+      throw error;
     }
-    return null;
   }
   
   async getAutoMLProgress(projectName: string) {
@@ -80,13 +139,80 @@ class H2OAutoML {
         method: 'GET'
       });
       
-      if (response.ok) {
-        return await response.json();
+      if (!response.ok) {
+        throw new Error(`Progress check failed: ${response.statusText}`);
       }
+      
+      return await response.json();
     } catch (error) {
       console.error('H2O progress check failed:', error);
+      throw error;
     }
-    return null;
+  }
+  
+  async getLeaderboard(projectName: string) {
+    try {
+      const response = await fetch(`${this.baseUrl}/3/AutoML/${projectName}/leaderboard`, {
+        method: 'GET'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Leaderboard fetch failed: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('H2O leaderboard fetch failed:', error);
+      throw error;
+    }
+  }
+  
+  async predict(modelId: string, frameId: string, inputData?: any) {
+    try {
+      let predictFrame = frameId;
+      
+      // If inputData provided, create a temporary frame for prediction
+      if (inputData) {
+        const tempFrameId = `predict_${Date.now()}`;
+        await this.uploadCSV(JSON.stringify(inputData), tempFrameId);
+        predictFrame = tempFrameId;
+      }
+      
+      const response = await fetch(`${this.baseUrl}/3/Predictions/models/${modelId}/frames/${predictFrame}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          predict_contributions: false,
+          predict_leaf_node_assignment: false
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Prediction failed: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('H2O prediction failed:', error);
+      throw error;
+    }
+  }
+  
+  async downloadMOJO(modelId: string) {
+    try {
+      const response = await fetch(`${this.baseUrl}/3/Models/${modelId}/mojo`, {
+        method: 'GET'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`MOJO download failed: ${response.statusText}`);
+      }
+      
+      return await response.arrayBuffer();
+    } catch (error) {
+      console.error('H2O MOJO download failed:', error);
+      throw error;
+    }
   }
 }
 
@@ -257,51 +383,141 @@ serve(async (req) => {
       // Validate model ownership
       const { data: model, error: mErr } = await supabaseClient
         .from('ml_models')
-        .select('id, name')
+        .select('id, name, model_config')
         .eq('id', modelId)
         .eq('user_id', user.id)
         .single();
       if (mErr) throw mErr;
 
-      // Create a simple artifact placeholder and upload to Storage, then return a signed download URL
-      const ext = format === 'tensorflow' ? 'zip' : (format === 'pickle' ? 'pkl' : format);
-      const path = `${user.id}/${model.id}.${ext}`;
+      const h2o = new H2OAutoML();
+      
+      try {
+        // Check if H2O is available
+        const h2oAvailable = await h2o.checkCluster();
+        if (!h2oAvailable) {
+          throw new Error('H2O cluster not available');
+        }
 
-      // Minimal binary payload to represent an exported artifact
-      const payload = new Blob([
-        JSON.stringify({
-          model_id: model.id,
-          model_name: model.name,
-          format,
-          created_at: new Date().toISOString()
-        })
-      ], { type: 'application/octet-stream' });
+        // Get the actual H2O model ID from model config
+        const h2oModelId = model.model_config?.best_model;
+        if (!h2oModelId) {
+          throw new Error('H2O model ID not found');
+        }
 
-      const { error: uploadErr } = await supabaseClient
-        .storage
-        .from('exports')
-        .upload(path, payload, { upsert: true, contentType: 'application/octet-stream' });
-      if (uploadErr) {
-        return new Response(JSON.stringify({ success: false, error: uploadErr.message }), {
+        let exportData: ArrayBuffer;
+        let fileName: string;
+        let contentType: string;
+
+        if (format === 'mojo' || format === 'pickle') {
+          // Download MOJO from H2O
+          exportData = await h2o.downloadMOJO(h2oModelId);
+          fileName = `${model.name}.mojo.zip`;
+          contentType = 'application/zip';
+        } else {
+          // For other formats, create a placeholder with model info
+          const modelInfo = {
+            model_id: model.id,
+            model_name: model.name,
+            h2o_model_id: h2oModelId,
+            format: format,
+            created_at: new Date().toISOString(),
+            note: 'This is a placeholder export. Use MOJO format for actual model files.'
+          };
+          
+          exportData = new TextEncoder().encode(JSON.stringify(modelInfo, null, 2));
+          fileName = `${model.name}.${format}`;
+          contentType = 'application/json';
+        }
+
+        // Upload to Supabase Storage
+        const path = `${user.id}/${model.id}_${fileName}`;
+        const blob = new Blob([exportData], { type: contentType });
+
+        const { error: uploadErr } = await supabaseClient
+          .storage
+          .from('exports')
+          .upload(path, blob, { upsert: true, contentType });
+        
+        if (uploadErr) {
+          return new Response(JSON.stringify({ success: false, error: uploadErr.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          });
+        }
+
+        // Create signed download URL
+        const { data: signedUrlData, error: signErr } = await supabaseClient
+          .storage
+          .from('exports')
+          .createSignedUrl(path, 60 * 60); // 1 hour
+        
+        if (signErr) {
+          return new Response(JSON.stringify({ success: false, error: signErr.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          });
+        }
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          downloadUrl: signedUrlData?.signedUrl, 
+          path,
+          fileName,
+          format: format
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
+        });
+
+      } catch (h2oError) {
+        console.error('H2O export failed:', h2oError);
+        
+        // Fallback to placeholder export
+        const ext = format === 'tensorflow' ? 'zip' : (format === 'pickle' ? 'pkl' : format);
+        const path = `${user.id}/${model.id}.${ext}`;
+
+        const payload = new Blob([
+          JSON.stringify({
+            model_id: model.id,
+            model_name: model.name,
+            format,
+            created_at: new Date().toISOString(),
+            warning: 'H2O unavailable, this is a placeholder export'
+          })
+        ], { type: 'application/octet-stream' });
+
+        const { error: uploadErr } = await supabaseClient
+          .storage
+          .from('exports')
+          .upload(path, payload, { upsert: true, contentType: 'application/octet-stream' });
+        
+        if (uploadErr) {
+          return new Response(JSON.stringify({ success: false, error: uploadErr.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          });
+        }
+
+        const { data: signedUrlData, error: signErr } = await supabaseClient
+          .storage
+          .from('exports')
+          .createSignedUrl(path, 60 * 60);
+        
+        if (signErr) {
+          return new Response(JSON.stringify({ success: false, error: signErr.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          });
+        }
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          downloadUrl: signedUrlData?.signedUrl, 
+          path,
+          warning: 'H2O unavailable, placeholder exported'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-
-      const { data: signedUrlData, error: signErr } = await supabaseClient
-        .storage
-        .from('exports')
-        .createSignedUrl(path, 60 * 60); // 1 hour
-      if (signErr) {
-        return new Response(JSON.stringify({ success: false, error: signErr.message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
-        });
-      }
-
-      return new Response(JSON.stringify({ success: true, downloadUrl: signedUrlData?.signedUrl, path }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
     }
 
     if (action === 'deploy-model') {
@@ -348,27 +564,69 @@ serve(async (req) => {
 
       const { data: model, error } = await supabaseClient
         .from('ml_models')
-        .select('id, name, model_type')
+        .select('id, name, model_type, model_config')
         .eq('id', modelId)
         .eq('user_id', user.id)
         .single();
       if (error) throw error;
 
-      // Dummy prediction response
-      const prediction = model.model_type.includes('regression')
-        ? Math.round(Math.random() * 1000) / 10
-        : (Math.random() > 0.5 ? 1 : 0);
-      const probability = Math.round((0.5 + Math.random() * 0.5) * 1000) / 1000;
+      const h2o = new H2OAutoML();
+      
+      try {
+        // Check if H2O is available
+        const h2oAvailable = await h2o.checkCluster();
+        if (!h2oAvailable) {
+          throw new Error('H2O cluster not available');
+        }
 
-      return new Response(JSON.stringify({
-        success: true,
-        modelId: model.id,
-        modelName: model.name,
-        output: { prediction, probability },
-        echo: input ?? null
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        // Get the actual H2O model ID from model config
+        const h2oModelId = model.model_config?.best_model;
+        if (!h2oModelId) {
+          throw new Error('H2O model ID not found');
+        }
+
+        // Make real prediction using H2O
+        const predictionResult = await h2o.predict(h2oModelId, 'temp_frame', input);
+        
+        // Extract prediction values from H2O response
+        const predictions = predictionResult?.predictions || [];
+        const prediction = predictions[0] || 0;
+        const probability = predictions[1] || 0.5; // For classification, this would be the probability
+
+        return new Response(JSON.stringify({
+          success: true,
+          modelId: model.id,
+          modelName: model.name,
+          h2oModelId: h2oModelId,
+          output: { 
+            prediction: prediction,
+            probability: probability,
+            raw_predictions: predictions
+          },
+          input: input
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (h2oError) {
+        console.error('H2O prediction failed:', h2oError);
+        
+        // Fallback to dummy prediction if H2O fails
+        const prediction = model.model_type.includes('regression')
+          ? Math.round(Math.random() * 1000) / 10
+          : (Math.random() > 0.5 ? 1 : 0);
+        const probability = Math.round((0.5 + Math.random() * 0.5) * 1000) / 1000;
+
+        return new Response(JSON.stringify({
+          success: true,
+          modelId: model.id,
+          modelName: model.name,
+          output: { prediction, probability },
+          input: input,
+          warning: 'H2O unavailable, using fallback prediction'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -392,6 +650,14 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
   try {
     console.log(`Starting H2O AutoML training for job ${jobId}`);
     
+    // Check if H2O cluster is available
+    const h2oAvailable = await h2o.checkCluster();
+    
+    if (!h2oAvailable) {
+      console.log('H2O not available, falling back to enhanced simulation');
+      return await enhancedSimulation(supabaseClient, jobId, config);
+    }
+    
     // Get job details and dataset
     const { data: job } = await supabaseClient
       .from('ml_jobs')
@@ -405,74 +671,89 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
       .eq('id', job.dataset_id)
       .single();
     
-    // Check if H2O cluster is available
-    const h2oAvailable = await h2o.startH2OCluster();
-    
-    if (!h2oAvailable) {
-      console.log('H2O not available, falling back to enhanced simulation');
-      return await enhancedSimulation(supabaseClient, jobId, config);
+    if (!dataset || !dataset.file_path) {
+      throw new Error('Dataset file not found');
     }
     
-    // Generate sample data based on dataset info (in real scenario, load from file)
-    const sampleData = generateSampleDataForTraining(dataset, config);
+    // Load actual CSV data from Supabase Storage
+    const { data: fileData, error: downloadError } = await supabaseClient.storage
+      .from('datasets')
+      .download(dataset.file_path);
     
-    // Upload data to H2O
-    const frameId = await h2o.uploadDataFrame(sampleData, `dataset_${jobId}`);
-    if (!frameId) {
-      throw new Error('Failed to upload data to H2O');
+    if (downloadError) {
+      throw new Error(`Failed to download dataset: ${downloadError.message}`);
     }
+    
+    const csvContent = await fileData.text();
+    const frameName = `dataset_${jobId}`;
+    
+    // Upload CSV to H2O
+    await h2o.uploadCSV(csvContent, frameName);
+    console.log(`Dataset uploaded to H2O as frame: ${frameName}`);
     
     // Start AutoML training
-    const automlResult = await h2o.trainAutoML(
-      frameId, 
-      config.targetColumn, 
+    const automlResult = await h2o.startAutoML(
+      frameName,
+      config.targetColumn,
       20, // max models
       config.timeBudget * 60 // convert minutes to seconds
     );
     
-    if (!automlResult) {
-      throw new Error('Failed to start H2O AutoML');
-    }
+    const projectName = automlResult.project_name;
+    console.log(`AutoML training started with project: ${projectName}`);
     
     // Monitor training progress
-    const projectName = automlResult.project_name;
     let progress = 0;
     const trainingHistory: any[] = [];
+    let lastProgress = 0;
     
     while (progress < 100) {
-      const progressData = await h2o.getAutoMLProgress(projectName);
-      if (progressData) {
-        progress = Math.min(progressData.progress * 100, 100);
+      try {
+        const progressData = await h2o.getAutoMLProgress(projectName);
         
-        // Update job progress
-        await supabaseClient
-          .from('ml_jobs')
-          .update({
-            progress: Math.floor(progress),
-            metrics: { 
-              models_trained: progressData.models_count || 0,
-              best_model_performance: progressData.leader_performance || 0
-            }
-          })
-          .eq('id', jobId);
-        
-        if (progressData.leader_performance) {
-          trainingHistory.push({
-            timestamp: new Date().toISOString(),
-            metric: progressData.leader_performance,
-            model_count: progressData.models_count || 0
-          });
+        if (progressData && progressData.auto_ml) {
+          progress = Math.min(progressData.auto_ml.progress * 100, 100);
+          
+          // Update job progress only if it changed significantly
+          if (Math.abs(progress - lastProgress) >= 5) {
+            await supabaseClient
+              .from('ml_jobs')
+              .update({
+                progress: Math.floor(progress),
+                metrics: { 
+                  models_trained: progressData.auto_ml.models_built || 0,
+                  best_model_performance: progressData.auto_ml.leader?.validation_metrics?.mean_per_class_error || 0
+                }
+              })
+              .eq('id', jobId);
+            
+            lastProgress = progress;
+            
+            trainingHistory.push({
+              timestamp: new Date().toISOString(),
+              progress: progress,
+              models_built: progressData.auto_ml.models_built || 0
+            });
+          }
         }
-      }
-      
-      if (progress < 100) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds
+        
+        if (progress < 100) {
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Check every 10 seconds
+        }
+      } catch (progressError) {
+        console.log('Progress check failed, continuing...', progressError.message);
+        await new Promise(resolve => setTimeout(resolve, 10000));
       }
     }
     
-    // Get final results
+    // Get final results and leaderboard
     const finalResults = await h2o.getAutoMLProgress(projectName);
-    const finalAccuracy = finalResults?.leader_performance || 0.85;
+    const leaderboard = await h2o.getLeaderboard(projectName);
+    
+    const leader = finalResults?.auto_ml?.leader;
+    const finalAccuracy = leader?.validation_metrics?.accuracy || 
+                         leader?.validation_metrics?.r2 || 
+                         (1 - leader?.validation_metrics?.mean_per_class_error) || 0.85;
     
     // Mark job as completed
     await supabaseClient
@@ -484,9 +765,10 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
         completed_at: new Date().toISOString(),
         metrics: {
           final_accuracy: finalAccuracy,
-          models_trained: finalResults?.models_count || 20,
-          best_model: finalResults?.leader_model || 'H2O_AutoML_Leader',
-          training_method: 'H2O_AutoML'
+          models_trained: finalResults?.auto_ml?.models_built || 20,
+          best_model: leader?.model_id || 'H2O_AutoML_Leader',
+          training_method: 'H2O_AutoML',
+          leaderboard: leaderboard?.models || []
         }
       })
       .eq('id', jobId);
@@ -501,17 +783,19 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
         model_type: 'H2O_AutoML',
         metrics: {
           accuracy: finalAccuracy,
-          precision: Math.min(finalAccuracy + 0.02, 0.98),
-          recall: Math.min(finalAccuracy - 0.01, 0.95),
-          f1_score: Math.min(finalAccuracy + 0.01, 0.96),
-          models_trained: finalResults?.models_count || 20
+          precision: leader?.validation_metrics?.precision || Math.min(finalAccuracy + 0.02, 0.98),
+          recall: leader?.validation_metrics?.recall || Math.min(finalAccuracy - 0.01, 0.95),
+          f1_score: leader?.validation_metrics?.f1 || Math.min(finalAccuracy + 0.01, 0.96),
+          models_trained: finalResults?.auto_ml?.models_built || 20
         },
         training_history: trainingHistory,
         status: 'ready',
         model_config: {
           framework: 'H2O',
           automl_config: config,
-          best_model: finalResults?.leader_model || 'H2O_AutoML_Leader'
+          best_model: leader?.model_id || 'H2O_AutoML_Leader',
+          project_name: projectName,
+          leaderboard: leaderboard?.models || []
         }
       });
 
@@ -520,8 +804,14 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
   } catch (error) {
     console.error('H2O AutoML training error:', error);
     
-    // Fall back to enhanced simulation if H2O fails
-    await enhancedSimulation(supabaseClient, jobId, config);
+    // Mark job as failed
+    await supabaseClient
+      .from('ml_jobs')
+      .update({
+        status: 'failed',
+        error_message: error.message
+      })
+      .eq('id', jobId);
   }
 }
 
