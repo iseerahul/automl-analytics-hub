@@ -125,7 +125,7 @@ export default function MLStudio() {
 
   const loadJobs = async () => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'get-jobs' }
       });
 
@@ -138,7 +138,7 @@ export default function MLStudio() {
 
   const loadModels = async () => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'get-models' }
       });
 
@@ -161,7 +161,7 @@ export default function MLStudio() {
 
     setLoading(true);
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: {
           action: 'start-training',
           name: wizardState.modelName,
@@ -208,7 +208,7 @@ export default function MLStudio() {
 
   const deleteJob = async (jobId: string) => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'delete-job', jobId }
       });
 
@@ -232,7 +232,7 @@ export default function MLStudio() {
 
   const exportModel = async (modelId: string, format: string) => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'export-model', modelId, format }
       });
 
@@ -257,7 +257,7 @@ export default function MLStudio() {
 
   const deployModel = async (modelId: string) => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'deploy-model', modelId }
       });
 
@@ -279,7 +279,7 @@ export default function MLStudio() {
 
   const deleteModel = async (modelId: string) => {
     try {
-      const response = await supabase.functions.invoke('ml-training', {
+      const response = await supabase.functions.invoke('gemini-ml', {
         body: { action: 'delete-model', modelId }
       });
       if (response.error) throw response.error;
