@@ -12,11 +12,24 @@ class H2OAutoML {
   
   async checkCluster() {
     try {
+      console.log(`Checking H2O cluster at: ${this.baseUrl}`);
       const response = await fetch(`${this.baseUrl}/3/Cloud`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
-      return response.ok;
+      
+      console.log(`H2O response status: ${response.status}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('H2O cluster info:', data);
+        return true;
+      } else {
+        console.log(`H2O cluster check failed: ${response.status} ${response.statusText}`);
+        return false;
+      }
     } catch (error) {
       console.log('H2O cluster not available:', error.message);
       return false;
@@ -25,12 +38,35 @@ class H2OAutoML {
   
   async uploadCSV(csvContent: string, frameName: string) {
     try {
-      // Step 1: ParseSetup
+      console.log(`Uploading CSV to H2O, frame name: ${frameName}`);
+      
+      // Step 1: Upload CSV data directly
+      const uploadResponse = await fetch(`${this.baseUrl}/3/PostFile`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'text/csv',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: csvContent
+      });
+      
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new Error(`File upload failed: ${uploadResponse.status} ${errorText}`);
+      }
+      
+      const uploadResult = await uploadResponse.json();
+      console.log('Upload result:', uploadResult);
+      
+      // Step 2: ParseSetup
       const parseSetupResponse = await fetch(`${this.baseUrl}/3/ParseSetup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({
-          source_frames: [frameName],
+          source_frames: [uploadResult.destination_frames[0]],
           parse_type: 'CSV',
           separator: 44, // comma
           number_columns: 0,
@@ -43,28 +79,20 @@ class H2OAutoML {
       });
       
       if (!parseSetupResponse.ok) {
-        throw new Error(`ParseSetup failed: ${parseSetupResponse.statusText}`);
+        const errorText = await parseSetupResponse.text();
+        throw new Error(`ParseSetup failed: ${parseSetupResponse.status} ${errorText}`);
       }
       
       const parseSetup = await parseSetupResponse.json();
-      
-      // Step 2: Upload CSV data
-      const uploadResponse = await fetch(`${this.baseUrl}/3/PostFile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/csv' },
-        body: csvContent
-      });
-      
-      if (!uploadResponse.ok) {
-        throw new Error(`File upload failed: ${uploadResponse.statusText}`);
-      }
-      
-      const uploadResult = await uploadResponse.json();
+      console.log('ParseSetup result:', parseSetup);
       
       // Step 3: Parse the uploaded file
       const parseResponse = await fetch(`${this.baseUrl}/3/Parse`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({
           job: parseSetup.job,
           destination_frame: frameName
@@ -72,8 +100,12 @@ class H2OAutoML {
       });
       
       if (!parseResponse.ok) {
-        throw new Error(`Parse failed: ${parseResponse.statusText}`);
+        const errorText = await parseResponse.text();
+        throw new Error(`Parse failed: ${parseResponse.status} ${errorText}`);
       }
+      
+      const parseResult = await parseResponse.json();
+      console.log('Parse result:', parseResult);
       
       return frameName;
     } catch (error) {
@@ -88,7 +120,10 @@ class H2OAutoML {
       
       const response = await fetch(`${this.baseUrl}/3/AutoML`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({
           training_frame: trainingFrame,
           y: targetColumn,
@@ -136,7 +171,8 @@ class H2OAutoML {
   async getAutoMLProgress(projectName: string) {
     try {
       const response = await fetch(`${this.baseUrl}/3/AutoML/${projectName}`, {
-        method: 'GET'
+        method: 'GET',
+        headers: { 'ngrok-skip-browser-warning': 'true' }
       });
       
       if (!response.ok) {
@@ -153,7 +189,8 @@ class H2OAutoML {
   async getLeaderboard(projectName: string) {
     try {
       const response = await fetch(`${this.baseUrl}/3/AutoML/${projectName}/leaderboard`, {
-        method: 'GET'
+        method: 'GET',
+        headers: { 'ngrok-skip-browser-warning': 'true' }
       });
       
       if (!response.ok) {
@@ -651,12 +688,15 @@ async function trainWithH2O(supabaseClient: any, jobId: string, config: Training
     console.log(`Starting H2O AutoML training for job ${jobId}`);
     
     // Check if H2O cluster is available
+    console.log(`H2O_BASE_URL from env: ${Deno.env.get('H2O_BASE_URL')}`);
     const h2oAvailable = await h2o.checkCluster();
     
     if (!h2oAvailable) {
       console.log('H2O not available, falling back to enhanced simulation');
       return await enhancedSimulation(supabaseClient, jobId, config);
     }
+    
+    console.log('H2O cluster is available, proceeding with real training');
     
     // Get job details and dataset
     const { data: job } = await supabaseClient
