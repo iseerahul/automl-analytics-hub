@@ -337,54 +337,41 @@ export default function MLStudio() {
       setLoading(true);
       setResults(null);
 
-      // Call Gemini ML function
+      // Call Gemini ML function with required data
       const { data, error } = await supabase.functions.invoke('gemini-ml', {
         body: { 
+          action: 'analyze',
           datasetId: wizardState.selectedDataset, 
           taskType: wizardState.problemType,
-          targetColumn: wizardState.targetColumn
+          targetColumn: wizardState.targetColumn,
+          useCase: wizardState.useCase
         }
       });
 
-      if (error) throw error;
-
-      const job = data as GeminiJobResponse;
-
-      // Poll for results with timeout
-      let attempts = 0;
-      const maxAttempts = 30; // 1 minute maximum (30 * 2 seconds)
-      let result: JobResult | null = null;
-
-      while (attempts < maxAttempts) {
-        const { data: resultData } = await supabase
-          .from('ml_jobs')
-          .select('result_json')
-          .eq('id', job.id)
-          .single();
-
-        if (resultData) {
-          result = resultData as unknown as JobResult;
-          break;
-        }
-
-        await new Promise(res => setTimeout(res, 2000));
-        attempts++;
+      if (error) {
+        throw new Error(error.message);
       }
 
-      if (!result) {
-        throw new Error('Training timed out');
+      if (!data) {
+        throw new Error('No response from Gemini');
       }
 
-      setResults(result.result_json);
-      
-      // Update jobs list
-      loadJobs();
+      // Store the Gemini response directly as results
+      setResults({
+        predictions: data.predictions || 'No predictions available',
+        insights: data.insights || 'No insights available'
+      });
+
+      toast({
+        title: "Analysis Complete",
+        description: "Gemini has analyzed your dataset and provided results.",
+      });
 
     } catch (error) {
       console.error('Training error:', error);
       toast({
-        title: "Training Failed",
-        description: error instanceof Error ? error.message : "An error occurred during training",
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "An error occurred during analysis",
         variant: "destructive"
       });
     } finally {

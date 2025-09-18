@@ -9,18 +9,22 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { datasetId, taskType } = await req.json();
+    const { action, datasetId, taskType, targetColumn, useCase } = await req.json();
+
+    if (action !== 'analyze') {
+      throw new Error('Invalid action');
+    }
 
     // Initialize Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     );
 
     // Fetch dataset
@@ -33,18 +37,18 @@ serve(async (req) => {
     if (datasetError) throw datasetError;
 
     // Call Gemini API
+    const prompt = `Analyze this dataset for ${taskType} task targeting ${targetColumn} column for ${useCase} use case. 
+                   Provide predictions and insights.
+                   Dataset: ${JSON.stringify(dataset)}`;
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${Deno.env.get('VITE_GEMINI_API_KEY')}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
-            parts: [{
-              text: `Analyze this dataset and provide predictions and insights for ${taskType} task:\n${JSON.stringify(dataset.data, null, 2)}`
-            }]
+            parts: [{ text: prompt }]
           }]
         })
       }
@@ -52,28 +56,24 @@ serve(async (req) => {
 
     const geminiResult = await response.json();
 
-    // Store results
-    const { data: result, error: resultError } = await supabaseClient
-      .from('results')
-      .insert({
-        task_id: datasetId,
-        result_json: geminiResult,
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (resultError) throw resultError;
+    // Process Gemini's response
+    const result = {
+      predictions: geminiResult.predictions || geminiResult.candidates[0].content.parts[0].text,
+      insights: geminiResult.insights || "Analysis complete"
+    };
 
     return new Response(
-      JSON.stringify({ id: result.id }),
+      JSON.stringify(result),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
     );
   }
 });
