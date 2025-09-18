@@ -248,38 +248,51 @@ export default function MLStudio() {
       setLoading(true);
       setResults(null);
 
-      // Call Gemini ML function with required data
+      // Validate required fields
+      if (!wizardState.selectedDataset || !wizardState.problemType || !wizardState.targetColumn) {
+        throw new Error('Missing required fields');
+      }
+
+      // Get dataset details
+      const { data: dataset, error: datasetError } = await supabase
+        .from('datasets')
+        .select('*')
+        .eq('id', wizardState.selectedDataset)
+        .single();
+
+      if (datasetError) throw datasetError;
+
+      // Call Gemini ML function
       const { data, error } = await supabase.functions.invoke('gemini-ml', {
         body: { 
-          action: 'analyze',
-          datasetId: wizardState.selectedDataset, 
+          datasetId: wizardState.selectedDataset,
+          dataset: dataset, // Send actual dataset
           taskType: wizardState.problemType,
           targetColumn: wizardState.targetColumn,
-          useCase: wizardState.useCase
+          useCase: wizardState.useCase || 'general',
+          modelConfig: {
+            timeBudget: wizardState.timeBudget,
+            optimizationMetric: wizardState.optimizationMetric
+          }
         }
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error('No response from analysis');
 
-      if (!data) {
-        throw new Error('No response from Gemini');
-      }
-
-      // Store the Gemini response directly as results
+      // Format and set results
       setResults({
-        predictions: data.predictions || 'No predictions available',
-        insights: data.insights || 'No insights available'
+        predictions: data.predictions || data.analysis || 'No predictions available',
+        insights: data.insights || data.recommendations || 'No insights available'
       });
 
       toast({
         title: "Analysis Complete",
-        description: "Gemini has analyzed your dataset and provided results.",
+        description: "Your dataset has been analyzed successfully.",
       });
 
     } catch (error) {
-      console.error('Training error:', error);
+      console.error('Analysis error:', error);
       toast({
         title: "Analysis Failed",
         description: error instanceof Error ? error.message : "An error occurred during analysis",
