@@ -37,17 +37,6 @@ interface MLJob {
   datasets?: { name: string; source: string };
 }
 
-interface MLModel {
-  id: string;
-  name: string;
-  model_type: string;
-  metrics: any;
-  training_history: any[];
-  status: string;
-  created_at: string;
-  model_config?: any;
-}
-
 interface WizardState {
   selectedDataset: string;
   problemType: 'classification' | 'regression';
@@ -96,10 +85,8 @@ const REGRESSION_USE_CASES = [
 ];
 
 export default function MLStudio() {
-  const [currentStep, setCurrentStep] = useState(1);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [jobs, setJobs] = useState<MLJob[]>([]);
-  const [models, setModels] = useState<MLModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [wizardState, setWizardState] = useState<WizardState>({
     selectedDataset: '',
@@ -108,23 +95,23 @@ export default function MLStudio() {
     targetColumn: '',
     timeBudget: 15,
     optimizationMetric: 'accuracy',
-    modelName: ''
+    modelName: '' // This can stay for job naming purposes
   });
   const [results, setResults] = useState<any>(null);
+  const [currentStep, setCurrentStep] = useState(1);
   const { toast } = useToast();
 
   useEffect(() => {
     loadDatasets();
     loadJobs();
-    loadModels();
-    
-    // Set up polling for job status updates
-    const interval = setInterval(() => {
-      loadJobs();
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    // Reset currentStep when wizard state changes
+    if (!wizardState.selectedDataset) {
+      setCurrentStep(1);
+    }
+  }, [wizardState.selectedDataset]);
 
   const loadDatasets = async () => {
     try {
@@ -151,19 +138,6 @@ export default function MLStudio() {
       setJobs(response.data?.jobs || []);
     } catch (error) {
       console.error('Error loading jobs:', error);
-    }
-  };
-
-  const loadModels = async () => {
-    try {
-      const response = await supabase.functions.invoke('gemini-ml', {
-        body: { action: 'get-models' }
-      });
-
-      if (response.error) throw response.error;
-      setModels(response.data?.models || []);
-    } catch (error) {
-      console.error('Error loading models:', error);
     }
   };
 
@@ -200,7 +174,6 @@ export default function MLStudio() {
       });
 
       // Reset wizard and switch to jobs tab
-      setCurrentStep(1);
       setWizardState({
         selectedDataset: '',
         problemType: 'classification',
@@ -248,67 +221,6 @@ export default function MLStudio() {
     }
   };
 
-  const exportModel = async (modelId: string, format: string) => {
-    try {
-      const response = await supabase.functions.invoke('gemini-ml', {
-        body: { action: 'export-model', modelId, format }
-      });
-
-      if (response.error) throw response.error;
-      const downloadUrl = response.data?.downloadUrl || response.data?.uploadUrl;
-      if (downloadUrl) {
-        window.open(downloadUrl, '_blank');
-      }
-      toast({
-        title: "Export Started",
-        description: `Model export to ${format} format has been initiated.`,
-      });
-    } catch (error) {
-      console.error('Export model error:', error);
-      toast({
-        title: "Export Failed",
-        description: "Failed to export model. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const deployModel = async (modelId: string) => {
-    try {
-      const response = await supabase.functions.invoke('gemini-ml', {
-        body: { action: 'deploy-model', modelId }
-      });
-
-      if (response.error) throw response.error;
-      const endpoint = response.data?.endpoint;
-      toast({
-        title: "Deployment Started",
-        description: endpoint ? `API endpoint: ${endpoint}` : "Model deployment as REST API has been initiated.",
-      });
-    } catch (error) {
-      console.error('Deploy model error:', error);
-      toast({
-        title: "Deployment Failed",
-        description: "Failed to deploy model. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const deleteModel = async (modelId: string) => {
-    try {
-      const response = await supabase.functions.invoke('gemini-ml', {
-        body: { action: 'delete-model', modelId }
-      });
-      if (response.error) throw response.error;
-      toast({ title: 'Model Deleted', description: 'Model removed from registry.' });
-      loadModels();
-    } catch (error) {
-      console.error('Delete model error:', error);
-      toast({ title: 'Delete Failed', description: 'Could not delete model.', variant: 'destructive' });
-    }
-  };
-
   const getStatusIcon = (status: MLJob['status']) => {
     switch (status) {
       case "completed": return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -330,7 +242,6 @@ export default function MLStudio() {
   };
 
   const selectedDataset = datasets.find(d => d.id === wizardState.selectedDataset);
-  const currentModel = models.length > 0 ? models[0] : null;
 
   const handleTrainModel = async () => {
     try {
@@ -393,7 +304,6 @@ export default function MLStudio() {
         <TabsList>
           <TabsTrigger value="wizard">AutoML Wizard</TabsTrigger>
           <TabsTrigger value="jobs">Training Jobs</TabsTrigger>
-          <TabsTrigger value="models">Model Registry</TabsTrigger>
           <TabsTrigger value="results">Training Results</TabsTrigger>
         </TabsList>
 
@@ -756,258 +666,33 @@ export default function MLStudio() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="models" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Model Registry</CardTitle>
-              <CardDescription>Manage your trained ML models and deploy them</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {models.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No trained models found. Complete model training to see your models here.
-                </div>
-              ) : (
-                models.map((model) => (
-                  <Card key={model.id} className="border">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Award className="h-5 w-5 text-primary" />
-                          <span className="font-medium">{model.name}</span>
-                          <Badge variant="secondary">{model.model_type}</Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={model.status === 'ready' ? 'default' : 'secondary'}>
-                            {model.status}
-                          </Badge>
-                          
-                          {/* Export Options */}
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => exportModel(model.id, 'pickle')}
-                            >
-                              <Download className="h-4 w-4 mr-1" />
-                              .pkl
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => exportModel(model.id, 'onnx')}
-                            >
-                              <Package className="h-4 w-4 mr-1" />
-                              ONNX
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => exportModel(model.id, 'tensorflow')}
-                            >
-                              <FileCode className="h-4 w-4 mr-1" />
-                              TF
-                            </Button>
-                          </div>
-                          
-                          {/* Deploy as API */}
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => deployModel(model.id)}
-                          >
-                            <Cloud className="h-4 w-4 mr-1" />
-                            Deploy API
-                          </Button>
-
-                          {/* Delete Model */}
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Model</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete this model? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteModel(model.id)}>
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-                      
-                      <div className="grid md:grid-cols-3 gap-4 mt-4">
-                        <div className="text-center p-3 bg-muted rounded-md">
-                          <div className="text-lg font-semibold">
-                            {model.metrics?.accuracy ? `${(model.metrics.accuracy * 100).toFixed(1)}%` : 'N/A'}
-                          </div>
-                          <div className="text-sm text-muted-foreground">Accuracy</div>
-                        </div>
-                        <div className="text-center p-3 bg-muted rounded-md">
-                          <div className="text-lg font-semibold">
-                            {model.metrics?.precision ? `${(model.metrics.precision * 100).toFixed(1)}%` : 'N/A'}
-                          </div>
-                          <div className="text-sm text-muted-foreground">Precision</div>
-                        </div>
-                        <div className="text-center p-3 bg-muted rounded-md">
-                          <div className="text-lg font-semibold">
-                            {new Date(model.created_at).toLocaleDateString()}
-                          </div>
-                          <div className="text-sm text-muted-foreground">Created</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="results" className="space-y-6">
-          {currentModel ? (
-            <div className="grid gap-6">
-              {/* Performance Overview */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    Performance Overview
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid md:grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-muted rounded-md">
-                      <div className="text-2xl font-bold text-primary">
-                        {currentModel.metrics?.accuracy ? `${(currentModel.metrics.accuracy * 100).toFixed(1)}%` : 'N/A'}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Overall Accuracy</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-md">
-                      <div className="text-2xl font-bold text-green-600">
-                        {currentModel.metrics?.precision ? `${(currentModel.metrics.precision * 100).toFixed(1)}%` : 'N/A'}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Precision</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-md">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {currentModel.metrics?.recall ? `${(currentModel.metrics.recall * 100).toFixed(1)}%` : 'N/A'}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Recall</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-md">
-                      <div className="text-2xl font-bold text-purple-600">
-                        {currentModel.metrics?.f1_score ? `${(currentModel.metrics.f1_score * 100).toFixed(1)}%` : 'N/A'}
-                      </div>
-                      <div className="text-sm text-muted-foreground">F1 Score</div>
-                    </div>
+          {results && (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle>Training Results</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {results.predictions && (
+                  <div className="bg-muted p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Predictions</h4>
+                    <pre className="whitespace-pre-wrap text-sm">
+                      {typeof results.predictions === 'object' 
+                        ? JSON.stringify(results.predictions, null, 2)
+                        : results.predictions}
+                    </pre>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Training Progress */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Training Progress</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={currentModel.training_history || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="epoch" />
-                      <YAxis />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="accuracy" stroke="#8884d8" strokeWidth={2} />
-                      <Line type="monotone" dataKey="loss" stroke="#82ca9d" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              {/* Training Summary */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Training Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="font-semibold mb-2">Key Insights</h4>
-                      <ul className="space-y-1 text-sm text-muted-foreground">
-                        <li>• Model converged successfully after training</li>
-                        <li>• Strong performance on validation set</li>
-                        <li>• Ready for production deployment</li>
-                        <li>• AutoML selected optimal hyperparameters</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">Model Configuration</h4>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>Algorithm:</span>
-                          <span>{currentModel.model_type}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Training Time:</span>
-                          <span>{currentModel.model_config?.training_time || 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Validation:</span>
-                          <span>{currentModel.model_config?.validation || 'Cross-validation'}</span>
-                        </div>
-                      </div>
-                    </div>
+                )}
+                {results.insights && (
+                  <div className="bg-muted p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Insights</h4>
+                    <pre className="whitespace-pre-wrap text-sm">
+                      {typeof results.insights === 'object'
+                        ? JSON.stringify(results.insights, null, 2)
+                        : results.insights}
+                    </pre>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Recommendations */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Target className="h-5 w-5" />
-                    Performance Recommendations
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-3 p-3 bg-green-50 rounded-md">
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-green-800">Model Ready for Deployment</div>
-                        <div className="text-sm text-green-700">
-                          Your model shows excellent performance metrics and is ready for production use.
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-md">
-                      <Settings className="h-5 w-5 text-blue-600 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-blue-800">Monitor Performance</div>
-                        <div className="text-sm text-blue-700">
-                          Set up monitoring to track model performance in production and detect data drift.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <div className="text-muted-foreground">
-                  No training results available. Complete a training job to see detailed results here.
-                </div>
+                )}
               </CardContent>
             </Card>
           )}
