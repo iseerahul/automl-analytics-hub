@@ -58,6 +58,23 @@ interface WizardState {
   modelName: string;
 }
 
+interface GeminiResult {
+  predictions: any;
+  insights: any;
+}
+
+interface JobResult {
+  id: string;
+  task_id: string;
+  result_json: GeminiResult;
+  created_at: string;
+}
+
+interface GeminiJobResponse {
+  id: string;
+  status: string;
+}
+
 const CLASSIFICATION_USE_CASES = [
   { id: 'churn', label: 'Customer Churn Prediction', description: 'Will a customer stop using our service?' },
   { id: 'fraud', label: 'Fraud Detection', description: 'Is a payment/transaction fraudulent?' },
@@ -93,6 +110,7 @@ export default function MLStudio() {
     optimizationMetric: 'accuracy',
     modelName: ''
   });
+  const [results, setResults] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -313,6 +331,66 @@ export default function MLStudio() {
 
   const selectedDataset = datasets.find(d => d.id === wizardState.selectedDataset);
   const currentModel = models.length > 0 ? models[0] : null;
+
+  const handleTrainModel = async () => {
+    try {
+      setLoading(true);
+      setResults(null);
+
+      // Call Gemini ML function
+      const { data, error } = await supabase.functions.invoke('gemini-ml', {
+        body: { 
+          datasetId: wizardState.selectedDataset, 
+          taskType: wizardState.problemType,
+          targetColumn: wizardState.targetColumn
+        }
+      });
+
+      if (error) throw error;
+
+      const job = data as GeminiJobResponse;
+
+      // Poll for results with timeout
+      let attempts = 0;
+      const maxAttempts = 30; // 1 minute maximum (30 * 2 seconds)
+      let result: JobResult | null = null;
+
+      while (attempts < maxAttempts) {
+        const { data: resultData } = await supabase
+          .from('ml_jobs')
+          .select('result_json')
+          .eq('id', job.id)
+          .single();
+
+        if (resultData) {
+          result = resultData as unknown as JobResult;
+          break;
+        }
+
+        await new Promise(res => setTimeout(res, 2000));
+        attempts++;
+      }
+
+      if (!result) {
+        throw new Error('Training timed out');
+      }
+
+      setResults(result.result_json);
+      
+      // Update jobs list
+      loadJobs();
+
+    } catch (error) {
+      console.error('Training error:', error);
+      toast({
+        title: "Training Failed",
+        description: error instanceof Error ? error.message : "An error occurred during training",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -948,6 +1026,37 @@ export default function MLStudio() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Results Section - New Addition */}
+      {results && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Training Results</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {results.predictions && (
+              <div className="bg-muted p-4 rounded-lg">
+                <h4 className="font-medium mb-2">Predictions</h4>
+                <pre className="whitespace-pre-wrap text-sm">
+                  {typeof results.predictions === 'object' 
+                    ? JSON.stringify(results.predictions, null, 2)
+                    : results.predictions}
+                </pre>
+              </div>
+            )}
+            {results.insights && (
+              <div className="bg-muted p-4 rounded-lg">
+                <h4 className="font-medium mb-2">Insights</h4>
+                <pre className="whitespace-pre-wrap text-sm">
+                  {typeof results.insights === 'object'
+                    ? JSON.stringify(results.insights, null, 2)
+                    : results.insights}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
